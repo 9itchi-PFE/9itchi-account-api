@@ -22,6 +22,9 @@ type AppConfig struct {
 	// Peer service base URLs.
 	NotificationAPIURL string
 	PaymentsAPIURL     string
+	// AdminEmail/AdminPassword optionally bootstrap the first admin at startup (env ADMIN_EMAIL, ADMIN_PASSWORD). Never log them.
+	AdminEmail    string
+	AdminPassword string
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -37,6 +40,8 @@ func LoadConfig() AppConfig {
 		InternalAPIKeyRequired: getBoolWithDefault("INTERNAL_API_KEY_REQUIRED", true),
 		NotificationAPIURL:     getStringWithDefault("NOTIFICATION_API_URL", "http://9itchi-notification-api:8087"),
 		PaymentsAPIURL:         getStringWithDefault("PAYMENTS_API_URL", "http://9itchi-payments-api:8089"),
+		AdminEmail:             getStringWithDefault("ADMIN_EMAIL", ""),
+		AdminPassword:          getStringWithDefault("ADMIN_PASSWORD", ""),
 	}
 }
 

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"io"
 	"net/http"
 
 	"9itchi-account-api/models"
@@ -64,7 +66,12 @@ func RefreshToken(svc services.AuthService) gin.HandlerFunc {
 // Logout: POST /auth/logout (user) invalidate refresh token.
 func Logout(svc services.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, apiErr := svc.Logout(c.Request.Context(), c.GetString("user_id"))
+		var req api.LogoutRequest
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			models.FormatError(c, &models.ApiError{Code: http.StatusBadRequest, Error: err})
+			return
+		}
+		result, apiErr := svc.Logout(c.Request.Context(), c.GetString("user_id"), req)
 		if apiErr != nil {
 			models.FormatError(c, apiErr)
 			return

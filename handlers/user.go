@@ -54,7 +54,12 @@ func DeleteMe(svc services.UserService) gin.HandlerFunc {
 // ListUsers: GET /admin/users (admin) list and search users.
 func ListUsers(svc services.UserService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, apiErr := svc.ListUsers(c.Request.Context(), c.GetString("user_id"))
+		var req api.ListUsersRequest
+		if err := c.ShouldBindQuery(&req); err != nil {
+			models.FormatError(c, &models.ApiError{Code: http.StatusBadRequest, Error: err})
+			return
+		}
+		result, apiErr := svc.ListUsers(c.Request.Context(), c.GetString("user_id"), req)
 		if apiErr != nil {
 			models.FormatError(c, apiErr)
 			return

@@ -46,6 +46,9 @@ func (app *App) setup() {
 	}
 
 	servicesWrapper := services.InitServices(config, repos)
+	if err := servicesWrapper.Auth.BootstrapAdmin(ctx); err != nil {
+		log.Printf("admin bootstrap skipped: %v", err)
+	}
 
 	app.Config = config
 	app.Repos = repos

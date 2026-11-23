@@ -1,6 +1,7 @@
 package services
 
 import (
+	"9itchi-account-api/core"
 	"9itchi-account-api/pkg/notification"
 	"9itchi-account-api/pkg/payments"
 	"9itchi-account-api/repositories"
@@ -22,8 +23,8 @@ type Clients struct {
 
 func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Services {
 	return &Services{
-		Auth: NewAuthService(repos.Auth),
-		User: NewUserService(repos.User),
+		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, core.NoopMailer{}),
+		User: NewUserService(repos.User, repos.Auth, repos.Store),
 		Clients: &Clients{
 			Notification: notification.New(config.NotificationAPIURL, config.InternalAPIKey),
 			Payments:     payments.New(config.PaymentsAPIURL, config.InternalAPIKey),
