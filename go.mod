@@ -18,6 +18,7 @@ require (
 require (
 	github.com/go-chi/chi/v5 v5.2.1 // indirect
 	github.com/mailgun/errors v0.4.0 // indirect
+	github.com/rabbitmq/amqp091-go v1.17.0 // indirect
 )
 
 require (

@@ -18,6 +18,12 @@ Access token 15 min, refresh token 7 days (stored hashed, rotated on refresh). P
 
 3 attempts (retry only on 5xx/network errors), 15s cap per call.
 
+## Events (RabbitMQ, optional)
+
+With `RABBITMQ_URL` set, `user.registered` (`user_id` only: no name, no email) is published to the topic exchange `9itchi.events` when a student account is created, by signup or by a first sign-in with Google or LinkedIn. The message is persistent JSON, confirmed by the broker, and carries a message id. Without the variable the event name is only logged.
+
+A publish failure is logged and never fails the signup. A broker that cannot be reached is left alone for 15 s; registrations made meanwhile are not counted (there is no outbox). Broker tests: `RABBITMQ_TEST_URL=amqp://guest:guest@localhost:5672/ go test -tags integration ./core/` (skipped without the variable).
+
 ## Endpoints
 
 | Method | Path | Access | Handler |

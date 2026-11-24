@@ -33,6 +33,7 @@ type authEnv struct {
 	users  *mocks.UserRepo
 	repo   *mocks.AuthRepo
 	mailer *mocks.Mailer
+	events *recordedEvents
 	// profile/exchangeErr drive the fake Google; exchangedCode records the code it received.
 	profile       core.GoogleProfile
 	exchangeErr   error
@@ -40,7 +41,7 @@ type authEnv struct {
 }
 
 func newAuthEnv(cfg utils.AppConfig) *authEnv {
-	e := &authEnv{users: mocks.NewUserRepo(), repo: mocks.NewAuthRepo(), mailer: &mocks.Mailer{}}
+	e := &authEnv{users: mocks.NewUserRepo(), repo: mocks.NewAuthRepo(), mailer: &mocks.Mailer{}, events: &recordedEvents{}}
 	google := mocks.GoogleOAuth{
 		AuthURLFn: func(state string) string { return "https://accounts.example/consent?state=" + state },
 		ExchangeFn: func(_ context.Context, code string) (core.GoogleProfile, error) {
@@ -48,7 +49,7 @@ func newAuthEnv(cfg utils.AppConfig) *authEnv {
 			return e.profile, e.exchangeErr
 		},
 	}
-	e.svc = NewAuthService(cfg, e.users, e.repo, mocks.Transactor{}, e.mailer, google, google)
+	e.svc = NewAuthService(cfg, e.users, e.repo, mocks.Transactor{}, e.mailer, google, google, e.events)
 	return e
 }
 
@@ -350,7 +351,7 @@ func TestLinkedInSignIn(t *testing.T) {
 	assert.GreaterOrEqual(t, len(res.State), 32)
 	assert.Contains(t, res.URL, "state="+res.State)
 
-	svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil, nil)
+	svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil, nil, nil)
 	_, apiErr = svc.LinkedInSignIn(context.Background())
 	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
@@ -372,7 +373,7 @@ func TestGoogleSignIn(t *testing.T) {
 	})
 
 	t.Run("unavailable when unconfigured", func(t *testing.T) {
-		svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil, nil)
+		svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil, nil, nil)
 		_, apiErr := svc.GoogleSignIn(context.Background())
 		require.NotNil(t, apiErr)
 		assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
@@ -526,4 +527,52 @@ func TestValidatePassword(t *testing.T) {
 	} {
 		assert.Equal(t, ok, validatePassword(pw) == nil, pw)
 	}
+}
+
+// recordedEvents keeps what the service published, and can fail like a broker that is down.
+type recordedEvents struct {
+	names    []string
+	payloads []any
+	err      error
+}
+
+func (r *recordedEvents) Publish(_ context.Context, name string, payload any) error {
+	r.names = append(r.names, name)
+	r.payloads = append(r.payloads, payload)
+	return r.err
+}
+
+func TestSignupPublishesUserRegistered(t *testing.T) {
+	e := newAuthEnv(testCfg)
+	res, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	require.Nil(t, apiErr)
+	require.Equal(t, []string{core.EventUserRegistered}, e.events.names)
+	assert.Equal(t, map[string]any{"user_id": res.User.ID}, e.events.payloads[0], "the id only: no name, no email")
+
+	_, apiErr = e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	require.NotNil(t, apiErr)
+	assert.Len(t, e.events.names, 1, "a refused signup registers nobody")
+}
+
+func TestSignupSucceedsWhenTheBrokerIsDown(t *testing.T) {
+	e := newAuthEnv(testCfg)
+	e.events.err = errors.New("rabbitmq: broker unreachable")
+	res, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	require.Nil(t, apiErr)
+	assert.NotEmpty(t, res.AccessToken)
+}
+
+// A first sign-in with Google creates the account and says so once; signing in again registers nobody.
+func TestGoogleFirstSignInPublishesUserRegistered(t *testing.T) {
+	e := newAuthEnv(testCfg)
+	e.profile = core.GoogleProfile{Email: "ann@example.com", EmailVerified: true, Name: "Ann G"}
+	req := api.GoogleCallbackRequest{Code: "code-1", State: "state-1", CookieState: "state-1"}
+
+	_, apiErr := e.svc.GoogleCallback(context.Background(), req)
+	require.Nil(t, apiErr)
+	require.Equal(t, []string{core.EventUserRegistered}, e.events.names)
+
+	_, apiErr = e.svc.GoogleCallback(context.Background(), req)
+	require.Nil(t, apiErr)
+	assert.Len(t, e.events.names, 1)
 }

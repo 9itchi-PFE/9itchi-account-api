@@ -73,10 +73,23 @@ type authService struct {
 	mailer   core.Mailer
 	google   core.OAuthProvider
 	linkedin core.OAuthProvider
+	events   core.Publisher
 }
 
-func NewAuthService(cfg utils.AppConfig, users repositories.UserRepository, repo repositories.AuthRepository, tx repositories.Transactor, mailer core.Mailer, google, linkedin core.OAuthProvider) AuthService {
-	return &authService{cfg: cfg, users: users, repo: repo, tx: tx, mailer: mailer, google: google, linkedin: linkedin}
+// NewAuthService builds the service. events may be nil: registrations are then only logged.
+func NewAuthService(cfg utils.AppConfig, users repositories.UserRepository, repo repositories.AuthRepository, tx repositories.Transactor, mailer core.Mailer, google, linkedin core.OAuthProvider, events core.Publisher) AuthService {
+	if events == nil {
+		events = core.LogPublisher{}
+	}
+	return &authService{cfg: cfg, users: users, repo: repo, tx: tx, mailer: mailer, google: google, linkedin: linkedin, events: events}
+}
+
+// registered tells the other services a student account now exists. The payload is the id only: no name, no email.
+// A failure is logged and never undoes the signup.
+func (s *authService) registered(ctx context.Context, user *db.User) {
+	if err := s.events.Publish(ctx, core.EventUserRegistered, map[string]any{"user_id": user.ID}); err != nil {
+		utils.Logger.Warn("publish event", zap.String("event", core.EventUserRegistered), zap.Error(err))
+	}
 }
 
 var (
@@ -131,6 +144,7 @@ func (s *authService) Signup(ctx context.Context, req api.SignupRequest) (*api.A
 	if err != nil {
 		return nil, internalError("signup create", err)
 	}
+	s.registered(ctx, user)
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
 		return nil, internalError("signup tokens", err)
@@ -377,10 +391,15 @@ func (s *authService) createOAuthUser(ctx context.Context, email, name string) (
 	if runes := []rune(name); len(runes) > 100 {
 		name = string(runes[:100])
 	}
-	return s.users.Create(ctx, &db.User{
+	user, err := s.users.Create(ctx, &db.User{
 		Name: name, Email: email, PasswordHash: string(hash),
 		Role: db.RoleCandidate, Status: db.StatusActive,
 	})
+	if err != nil {
+		return nil, err
+	}
+	s.registered(ctx, user)
+	return user, nil
 }
 
 func (s *authService) BootstrapAdmin(ctx context.Context) error {
