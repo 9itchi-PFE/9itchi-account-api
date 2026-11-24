@@ -25,6 +25,18 @@ type AppConfig struct {
 	// AdminEmail/AdminPassword optionally bootstrap the first admin at startup (env ADMIN_EMAIL, ADMIN_PASSWORD). Never log them.
 	AdminEmail    string
 	AdminPassword string
+	// Google sign-in is disabled (503) while GoogleClientID or GoogleClientSecret is empty. Never log the secret.
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+	// FrontendURL is where the Google callback sends the browser (tokens in the URL fragment).
+	FrontendURL string
+	// Mailgun sends password reset mails; disabled (NoopMailer) while the API key or domain is empty. Never log the key.
+	MailgunAPIKey    string
+	MailgunDomain    string
+	MailgunFromEmail string
+	MailgunAPIBase   string
+	MailgunRateLimit int
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -42,6 +54,15 @@ func LoadConfig() AppConfig {
 		PaymentsAPIURL:         getStringWithDefault("PAYMENTS_API_URL", "http://9itchi-payments-api:8089"),
 		AdminEmail:             getStringWithDefault("ADMIN_EMAIL", ""),
 		AdminPassword:          getStringWithDefault("ADMIN_PASSWORD", ""),
+		GoogleClientID:         getStringWithDefault("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:     getStringWithDefault("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:      getStringWithDefault("GOOGLE_REDIRECT_URL", "http://localhost:8081/auth/google/callback"),
+		FrontendURL:            getStringWithDefault("FRONTEND_URL", "http://localhost:3000"),
+		MailgunAPIKey:          getStringWithDefault("MAILGUN_API_KEY", ""),
+		MailgunDomain:          getStringWithDefault("MAILGUN_DOMAIN", ""),
+		MailgunFromEmail:       getStringWithDefault("MAILGUN_FROM_EMAIL", ""),
+		MailgunAPIBase:         getStringWithDefault("MAILGUN_API_BASE", ""),
+		MailgunRateLimit:       getIntWithDefault("MAILGUN_RATE_LIMIT", 10),
 	}
 }
 

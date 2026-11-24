@@ -114,26 +114,44 @@ func ResetPassword(svc services.AuthService) gin.HandlerFunc {
 	}
 }
 
+const (
+	googleStateCookie = "google_oauth_state"
+	googleStateMaxAge = 10 * 60
+)
+
 // GoogleSignIn: GET /auth/google (public) start Google OAuth2 sign-in.
 func GoogleSignIn(svc services.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, apiErr := svc.GoogleSignIn(c.Request.Context())
+		start, apiErr := svc.GoogleSignIn(c.Request.Context())
 		if apiErr != nil {
 			models.FormatError(c, apiErr)
 			return
 		}
-		c.JSON(http.StatusOK, result)
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie(googleStateCookie, start.State, googleStateMaxAge, "/auth/google", "", isHTTPS(c), true)
+		c.Redirect(http.StatusFound, start.URL)
 	}
 }
 
 // GoogleCallback: GET /auth/google/callback (public) finish Google OAuth2 sign-in.
 func GoogleCallback(svc services.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, apiErr := svc.GoogleCallback(c.Request.Context())
+		cookieState, _ := c.Cookie(googleStateCookie)
+		result, apiErr := svc.GoogleCallback(c.Request.Context(), api.GoogleCallbackRequest{
+			Code:        c.Query("code"),
+			State:       c.Query("state"),
+			CookieState: cookieState,
+		})
 		if apiErr != nil {
 			models.FormatError(c, apiErr)
 			return
 		}
-		c.JSON(http.StatusOK, result)
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie(googleStateCookie, "", -1, "/auth/google", "", isHTTPS(c), true)
+		c.Redirect(http.StatusFound, result.URL)
 	}
+}
+
+func isHTTPS(c *gin.Context) bool {
+	return c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
 }

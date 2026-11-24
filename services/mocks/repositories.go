@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"9itchi-account-api/core"
 	"9itchi-account-api/models/db"
 	"9itchi-account-api/repositories"
 )
@@ -264,4 +265,16 @@ type Mailer struct {
 func (m *Mailer) SendPasswordResetCode(_ context.Context, email, code string) error {
 	m.Email, m.Code = email, code
 	return m.Err
+}
+
+// GoogleOAuth is a func-field fake of core.GoogleOAuth; it never touches the network.
+type GoogleOAuth struct {
+	AuthURLFn  func(state string) string
+	ExchangeFn func(ctx context.Context, code string) (core.GoogleProfile, error)
+}
+
+func (g GoogleOAuth) AuthURL(state string) string { return g.AuthURLFn(state) }
+
+func (g GoogleOAuth) Exchange(ctx context.Context, code string) (core.GoogleProfile, error) {
+	return g.ExchangeFn(ctx, code)
 }

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
+	"9itchi-account-api/core"
 	"9itchi-account-api/models/api"
 	"9itchi-account-api/models/db"
 	"9itchi-account-api/services/mocks"
@@ -29,11 +31,22 @@ type authEnv struct {
 	users  *mocks.UserRepo
 	repo   *mocks.AuthRepo
 	mailer *mocks.Mailer
+	// profile/exchangeErr drive the fake Google; exchangedCode records the code it received.
+	profile       core.GoogleProfile
+	exchangeErr   error
+	exchangedCode string
 }
 
 func newAuthEnv(cfg utils.AppConfig) *authEnv {
 	e := &authEnv{users: mocks.NewUserRepo(), repo: mocks.NewAuthRepo(), mailer: &mocks.Mailer{}}
-	e.svc = NewAuthService(cfg, e.users, e.repo, mocks.Transactor{}, e.mailer)
+	google := mocks.GoogleOAuth{
+		AuthURLFn: func(state string) string { return "https://accounts.example/consent?state=" + state },
+		ExchangeFn: func(_ context.Context, code string) (core.GoogleProfile, error) {
+			e.exchangedCode = code
+			return e.profile, e.exchangeErr
+		},
+	}
+	e.svc = NewAuthService(cfg, e.users, e.repo, mocks.Transactor{}, e.mailer, google)
 	return e
 }
 
@@ -326,14 +339,114 @@ func TestResetPassword(t *testing.T) {
 	})
 }
 
-func TestGoogleStaysNotImplemented(t *testing.T) {
-	e := newAuthEnv(testCfg)
-	_, apiErr := e.svc.GoogleSignIn(context.Background())
-	require.NotNil(t, apiErr)
-	assert.Equal(t, http.StatusNotImplemented, apiErr.Code)
-	_, apiErr = e.svc.GoogleCallback(context.Background())
-	require.NotNil(t, apiErr)
-	assert.Equal(t, http.StatusNotImplemented, apiErr.Code)
+func TestGoogleSignIn(t *testing.T) {
+	t.Run("returns consent url carrying a random state", func(t *testing.T) {
+		e := newAuthEnv(testCfg)
+		a, apiErr := e.svc.GoogleSignIn(context.Background())
+		require.Nil(t, apiErr)
+		b, _ := e.svc.GoogleSignIn(context.Background())
+		assert.GreaterOrEqual(t, len(a.State), 32)
+		assert.NotEqual(t, a.State, b.State)
+		assert.Contains(t, a.URL, "state="+a.State)
+	})
+
+	t.Run("unavailable when unconfigured", func(t *testing.T) {
+		svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil)
+		_, apiErr := svc.GoogleSignIn(context.Background())
+		require.NotNil(t, apiErr)
+		assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
+		assert.Equal(t, "google sign-in unavailable", apiErr.Error.Error())
+		_, apiErr = svc.GoogleCallback(context.Background(), api.GoogleCallbackRequest{Code: "c", State: "s", CookieState: "s"})
+		require.NotNil(t, apiErr)
+		assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
+	})
+}
+
+func TestGoogleCallback(t *testing.T) {
+	ctx := context.Background()
+	cfg := testCfg
+	cfg.FrontendURL = "http://front.example/"
+	const failURL = "http://front.example/auth/signin?error=google_failed"
+	okReq := api.GoogleCallbackRequest{Code: "code-1", State: "state-1", CookieState: "state-1"}
+	verified := core.GoogleProfile{Email: "Ann@Example.com", EmailVerified: true, Name: "Ann G"}
+
+	tests := []struct {
+		name         string
+		req          api.GoogleCallbackRequest
+		profile      core.GoogleProfile
+		exchangeErr  error
+		setup        func(e *authEnv)
+		wantExchange bool
+	}{
+		{name: "missing state cookie", req: api.GoogleCallbackRequest{Code: "c", State: "s"}, profile: verified},
+		{name: "state mismatch", req: api.GoogleCallbackRequest{Code: "c", State: "x", CookieState: "y"}, profile: verified},
+		{name: "missing code", req: api.GoogleCallbackRequest{State: "s", CookieState: "s"}, profile: verified},
+		{name: "exchange failure", req: okReq, exchangeErr: errors.New("boom"), wantExchange: true},
+		{name: "unverified email", req: okReq, profile: core.GoogleProfile{Email: "ann@example.com"}, wantExchange: true},
+		{name: "no email", req: okReq, profile: core.GoogleProfile{EmailVerified: true}, wantExchange: true},
+		{name: "suspended user", req: okReq, profile: verified, wantExchange: true,
+			setup: func(e *authEnv) { e.addUser(t, "ann@example.com", db.StatusSuspended) }},
+		{name: "repo failure", req: okReq, profile: verified, wantExchange: true,
+			setup: func(e *authEnv) { e.users.Err = errors.New("boom") }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newAuthEnv(cfg)
+			e.profile, e.exchangeErr = tt.profile, tt.exchangeErr
+			if tt.setup != nil {
+				tt.setup(e)
+			}
+			res, apiErr := e.svc.GoogleCallback(ctx, tt.req)
+			require.Nil(t, apiErr)
+			assert.Equal(t, failURL, res.URL)
+			assert.Equal(t, tt.wantExchange, e.exchangedCode != "")
+			assert.Empty(t, e.repo.Tokens, "no session may be created")
+		})
+	}
+
+	assertFragmentTokens := func(t *testing.T, e *authEnv, res *api.GoogleRedirect, wantEmail string) {
+		t.Helper()
+		u, err := url.Parse(res.URL)
+		require.NoError(t, err)
+		assert.Equal(t, "http://front.example/auth/callback", u.Scheme+"://"+u.Host+u.Path)
+		assert.Empty(t, u.RawQuery, "tokens must not be in the query string")
+		frag, err := url.ParseQuery(u.Fragment)
+		require.NoError(t, err)
+		access, err := utils.ParseToken(cfg, frag.Get("access_token"))
+		require.NoError(t, err)
+		assert.Equal(t, utils.TokenAccess, access.Type)
+		assert.Equal(t, wantEmail, access.Email)
+		refresh, err := utils.ParseToken(cfg, frag.Get("refresh_token"))
+		require.NoError(t, err)
+		assert.Equal(t, utils.TokenRefresh, refresh.Type)
+		assert.Contains(t, e.repo.Tokens, hashToken(frag.Get("refresh_token")))
+		assert.Equal(t, "code-1", e.exchangedCode)
+	}
+
+	t.Run("new user is created and signed in", func(t *testing.T) {
+		e := newAuthEnv(cfg)
+		e.profile = verified
+		res, apiErr := e.svc.GoogleCallback(ctx, okReq)
+		require.Nil(t, apiErr)
+		assertFragmentTokens(t, e, res, "ann@example.com")
+		u, err := e.users.GetByEmail(ctx, "ann@example.com")
+		require.NoError(t, err)
+		assert.Equal(t, "Ann G", u.Name)
+		assert.Equal(t, db.RoleCandidate, u.Role)
+		assert.Equal(t, db.StatusActive, u.Status)
+		assert.NotEmpty(t, u.PasswordHash)
+	})
+
+	t.Run("existing user is signed in without changes", func(t *testing.T) {
+		e := newAuthEnv(cfg)
+		e.profile = verified
+		existing := e.addUser(t, "ann@example.com", db.StatusActive)
+		res, apiErr := e.svc.GoogleCallback(ctx, okReq)
+		require.Nil(t, apiErr)
+		assertFragmentTokens(t, e, res, "ann@example.com")
+		assert.Len(t, e.users.Users, 1)
+		assert.Equal(t, "Ann", e.users.Users[existing.ID].Name)
+	})
 }
 
 func TestBootstrapAdmin(t *testing.T) {

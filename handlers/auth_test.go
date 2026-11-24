@@ -21,6 +21,8 @@ type fakeAuth struct {
 	services.AuthService
 	signup func(api.SignupRequest) (*api.AuthResponse, *models.ApiError)
 	logout func(string, api.LogoutRequest) (*api.MessageResponse, *models.ApiError)
+	gstart func() (*api.GoogleStart, *models.ApiError)
+	gcb    func(api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError)
 }
 
 func (f fakeAuth) Signup(_ context.Context, r api.SignupRequest) (*api.AuthResponse, *models.ApiError) {
@@ -29,6 +31,14 @@ func (f fakeAuth) Signup(_ context.Context, r api.SignupRequest) (*api.AuthRespo
 
 func (f fakeAuth) Logout(_ context.Context, id string, r api.LogoutRequest) (*api.MessageResponse, *models.ApiError) {
 	return f.logout(id, r)
+}
+
+func (f fakeAuth) GoogleSignIn(context.Context) (*api.GoogleStart, *models.ApiError) {
+	return f.gstart()
+}
+
+func (f fakeAuth) GoogleCallback(_ context.Context, r api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError) {
+	return f.gcb(r)
 }
 
 func do(h gin.HandlerFunc, method, path, body string, params ...gin.Param) *httptest.ResponseRecorder {
@@ -88,4 +98,44 @@ func TestLogoutHandlerBodyOptional(t *testing.T) {
 
 	w = do(Logout(svc), http.MethodPost, "/auth/logout", `{bad`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestGoogleHandlers(t *testing.T) {
+	var gotReq api.GoogleCallbackRequest
+	svc := fakeAuth{
+		gstart: func() (*api.GoogleStart, *models.ApiError) {
+			return &api.GoogleStart{URL: "https://accounts.example/consent", State: "st"}, nil
+		},
+		gcb: func(r api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError) {
+			gotReq = r
+			return &api.GoogleRedirect{URL: "http://front/auth/callback#access_token=a"}, nil
+		},
+	}
+
+	w := do(GoogleSignIn(svc), http.MethodGet, "/auth/google", "")
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://accounts.example/consent", w.Header().Get("Location"))
+	cookie := w.Result().Cookies()[0]
+	assert.Equal(t, "st", cookie.Value)
+	assert.True(t, cookie.HttpOnly)
+	assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+	assert.Positive(t, cookie.MaxAge)
+
+	gin.SetMode(gin.TestMode)
+	w = httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=cd&state=st", nil)
+	c.Request.AddCookie(&http.Cookie{Name: googleStateCookie, Value: "st"})
+	GoogleCallback(svc)(c)
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "http://front/auth/callback#access_token=a", w.Header().Get("Location"))
+	assert.Equal(t, api.GoogleCallbackRequest{Code: "cd", State: "st", CookieState: "st"}, gotReq)
+	assert.Negative(t, w.Result().Cookies()[0].MaxAge, "state cookie is cleared")
+
+	unavailable := fakeAuth{gstart: func() (*api.GoogleStart, *models.ApiError) {
+		return nil, &models.ApiError{Code: http.StatusServiceUnavailable, Error: errors.New("google sign-in unavailable")}
+	}}
+	w = do(GoogleSignIn(unavailable), http.MethodGet, "/auth/google", "")
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"google sign-in unavailable"`)
 }

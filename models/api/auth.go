@@ -48,6 +48,24 @@ type TokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// GoogleStart is what the handler needs to begin Google sign-in: the consent URL and the state to store in the cookie.
+type GoogleStart struct {
+	URL   string
+	State string
+}
+
+// GoogleCallbackRequest carries the callback query values and the state cookie.
+type GoogleCallbackRequest struct {
+	Code        string
+	State       string
+	CookieState string
+}
+
+// GoogleRedirect is the browser redirect target after the callback (success or failure).
+type GoogleRedirect struct {
+	URL string
+}
+
 // MessageResponse is a plain acknowledgement body.
 type MessageResponse struct {
 	Message string `json:"message"`

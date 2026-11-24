@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -25,13 +28,14 @@ import (
 )
 
 const (
-	accessTTL          = 15 * time.Minute
-	refreshTTL         = 7 * 24 * time.Hour
-	resetCodeTTL       = 15 * time.Minute
-	maxResetAttempts   = 5
-	errInvalidCreds    = "invalid credentials"
-	errInvalidRefresh  = "invalid refresh token"
-	errInvalidResetMsg = "invalid or expired code"
+	accessTTL            = 15 * time.Minute
+	refreshTTL           = 7 * 24 * time.Hour
+	resetCodeTTL         = 15 * time.Minute
+	maxResetAttempts     = 5
+	errInvalidCreds      = "invalid credentials"
+	errInvalidRefresh    = "invalid refresh token"
+	errInvalidResetMsg   = "invalid or expired code"
+	errGoogleUnavailable = "google sign-in unavailable"
 )
 
 // AuthService holds all business logic for auth. Handlers stay thin.
@@ -48,10 +52,10 @@ type AuthService interface {
 	ForgotPassword(ctx context.Context, req api.ForgotPasswordRequest) (*api.MessageResponse, *models.ApiError)
 	// POST /auth/reset-password: apply reset code
 	ResetPassword(ctx context.Context, req api.ResetPasswordRequest) (*api.MessageResponse, *models.ApiError)
-	// GET /auth/google: start Google OAuth2 sign-in
-	GoogleSignIn(ctx context.Context) (any, *models.ApiError)
-	// GET /auth/google/callback: finish Google OAuth2 sign-in
-	GoogleCallback(ctx context.Context) (any, *models.ApiError)
+	// GET /auth/google: start Google OAuth2 sign-in (503 when not configured)
+	GoogleSignIn(ctx context.Context) (*api.GoogleStart, *models.ApiError)
+	// GET /auth/google/callback: finish Google OAuth2 sign-in; every failure is a redirect to the frontend sign-in page
+	GoogleCallback(ctx context.Context, req api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError)
 	// BootstrapAdmin creates the first admin from ADMIN_EMAIL/ADMIN_PASSWORD when no admin exists.
 	BootstrapAdmin(ctx context.Context) error
 }
@@ -62,10 +66,11 @@ type authService struct {
 	repo   repositories.AuthRepository
 	tx     repositories.Transactor
 	mailer core.Mailer
+	google core.GoogleOAuth
 }
 
-func NewAuthService(cfg utils.AppConfig, users repositories.UserRepository, repo repositories.AuthRepository, tx repositories.Transactor, mailer core.Mailer) AuthService {
-	return &authService{cfg: cfg, users: users, repo: repo, tx: tx, mailer: mailer}
+func NewAuthService(cfg utils.AppConfig, users repositories.UserRepository, repo repositories.AuthRepository, tx repositories.Transactor, mailer core.Mailer, google core.GoogleOAuth) AuthService {
+	return &authService{cfg: cfg, users: users, repo: repo, tx: tx, mailer: mailer, google: google}
 }
 
 var (
@@ -275,12 +280,78 @@ func (s *authService) ResetPassword(ctx context.Context, req api.ResetPasswordRe
 	return &api.MessageResponse{Message: "password updated"}, nil
 }
 
-func (s *authService) GoogleSignIn(_ context.Context) (any, *models.ApiError) {
-	return nil, models.NotImplemented()
+func (s *authService) GoogleSignIn(_ context.Context) (*api.GoogleStart, *models.ApiError) {
+	if s.google == nil {
+		return nil, apiError(http.StatusServiceUnavailable, errGoogleUnavailable)
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, internalError("google state", err)
+	}
+	state := base64.RawURLEncoding.EncodeToString(buf)
+	return &api.GoogleStart{URL: s.google.AuthURL(state), State: state}, nil
 }
 
-func (s *authService) GoogleCallback(_ context.Context) (any, *models.ApiError) {
-	return nil, models.NotImplemented()
+func (s *authService) GoogleCallback(ctx context.Context, req api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError) {
+	if s.google == nil {
+		return nil, apiError(http.StatusServiceUnavailable, errGoogleUnavailable)
+	}
+	frontend := strings.TrimRight(s.cfg.FrontendURL, "/")
+	failed := &api.GoogleRedirect{URL: frontend + "/auth/signin?error=google_failed"}
+
+	if req.CookieState == "" || req.Code == "" || subtle.ConstantTimeCompare([]byte(req.State), []byte(req.CookieState)) != 1 {
+		return failed, nil
+	}
+	profile, err := s.google.Exchange(ctx, req.Code)
+	if err != nil {
+		utils.Logger.Warn("google exchange", zap.Error(err))
+		return failed, nil
+	}
+	email := normalizeEmail(profile.Email)
+	if email == "" || !profile.EmailVerified {
+		return failed, nil
+	}
+	user, err := s.users.GetByEmail(ctx, email)
+	if errors.Is(err, repositories.ErrNotFound) {
+		user, err = s.createGoogleUser(ctx, email, profile.Name)
+	}
+	if err != nil {
+		utils.Logger.Error("google user", zap.Error(err))
+		return failed, nil
+	}
+	if user.Status == db.StatusSuspended {
+		return failed, nil
+	}
+	access, refresh, err := s.issueTokens(ctx, user)
+	if err != nil {
+		utils.Logger.Error("google tokens", zap.Error(err))
+		return failed, nil
+	}
+	fragment := url.Values{"access_token": {access}, "refresh_token": {refresh}}.Encode()
+	return &api.GoogleRedirect{URL: frontend + "/auth/callback#" + fragment}, nil
+}
+
+// createGoogleUser registers a password-less account: the stored hash is of random bytes nobody knows.
+func (s *authService) createGoogleUser(ctx context.Context, email, name string) (*db.User, error) {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(hex.EncodeToString(secret)), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name, _, _ = strings.Cut(email, "@")
+	}
+	if runes := []rune(name); len(runes) > 100 {
+		name = string(runes[:100])
+	}
+	return s.users.Create(ctx, &db.User{
+		Name: name, Email: email, PasswordHash: string(hash),
+		Role: db.RoleCandidate, Status: db.StatusActive,
+	})
 }
 
 func (s *authService) BootstrapAdmin(ctx context.Context) error {
