@@ -47,6 +47,19 @@ func TestUserCRUD(t *testing.T) {
 	_, err = repo.GetByID(ctx, "00000000-0000-4000-8000-000000000000")
 	assert.ErrorIs(t, err, ErrNotFound)
 
+	enis := "ENIS"
+	withSchool, err := repo.UpdateProfile(ctx, u.ID, "Ann", &enis)
+	require.NoError(t, err)
+	require.NotNil(t, withSchool.School)
+	assert.Equal(t, "ENIS", *withSchool.School)
+	kept, err := repo.UpdateProfile(ctx, u.ID, "Ann", nil)
+	require.NoError(t, err)
+	require.NotNil(t, kept.School, "nil keeps the school")
+	empty := ""
+	cleared, err := repo.UpdateProfile(ctx, u.ID, "Ann", &empty)
+	require.NoError(t, err)
+	assert.Nil(t, cleared.School)
+
 	named, err := repo.UpdateName(ctx, u.ID, "Renamed")
 	require.NoError(t, err)
 	assert.Equal(t, "Renamed", named.Name)

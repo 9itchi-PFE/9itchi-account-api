@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,7 @@ func TestSignup(t *testing.T) {
 		wantCode int
 	}{
 		{"ok, email lower-cased", api.SignupRequest{Name: " Ann ", Email: "Ann@Example.COM", Password: goodPassword}, nil, 0},
+		{"ok with a school", api.SignupRequest{Name: "Ann", Email: "ann@example.com", Password: goodPassword, School: " ENIS "}, nil, 0},
 		{"weak password", api.SignupRequest{Name: "Ann", Email: "a@b.co", Password: "password1"}, nil, http.StatusBadRequest},
 		{"blank name", api.SignupRequest{Name: "  ", Email: "a@b.co", Password: goodPassword}, nil, http.StatusBadRequest},
 		{"duplicate email, case-insensitive", api.SignupRequest{Name: "Ann", Email: "ANN@example.com", Password: goodPassword},
@@ -92,6 +94,7 @@ func TestSignup(t *testing.T) {
 			require.Nil(t, apiErr)
 			assert.Equal(t, "ann@example.com", res.User.Email)
 			assert.Equal(t, "Ann", res.User.Name)
+			assert.Equal(t, strings.TrimSpace(tt.req.School), res.User.School)
 			assert.Equal(t, db.RoleCandidate, res.User.Role)
 			assert.Equal(t, db.StatusActive, res.User.Status)
 

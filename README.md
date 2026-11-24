@@ -47,3 +47,4 @@ Access token 15 min, refresh token 7 days (stored hashed, rotated on refresh). P
 cp .env.example .env
 go run main.go
 ```
+- Users carry an optional `school` (a short code such as `ENIS`, at most 120 characters): set at sign-up, changed with `PUT /users/me` (`"school": ""` clears it, no key keeps it), returned in the user view. Migration `0003`.

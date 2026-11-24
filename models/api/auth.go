@@ -5,6 +5,8 @@ type SignupRequest struct {
 	Name     string `json:"name" binding:"required,max=100"`
 	Email    string `json:"email" binding:"required,email,max=254"`
 	Password string `json:"password" binding:"required,min=8,max=72"`
+	// School is optional: a short code such as ENIS chosen on the sign-up screen.
+	School string `json:"school" binding:"max=120"`
 }
 
 // LoginRequest is the validated body of Login.
