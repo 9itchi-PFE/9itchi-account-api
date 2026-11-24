@@ -20,6 +20,10 @@ type fakeUser struct {
 	update  func(api.UpdateMeRequest) (*api.UserResponse, *models.ApiError)
 }
 
+func (f fakeUser) SetLanguage(_ context.Context, _ string, r api.SetLanguageRequest) (*api.UserResponse, *models.ApiError) {
+	return &api.UserResponse{Language: r.Language}, nil
+}
+
 func (f fakeUser) ListUsers(_ context.Context, _ string, r api.ListUsersRequest) (*api.ListUsersResponse, *models.ApiError) {
 	return f.list(r)
 }
@@ -74,4 +78,16 @@ func TestUpdateMeHandlerValidates(t *testing.T) {
 
 	w = do(UpdateMe(svc), http.MethodPut, "/users/me", `{}`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSetLanguageHandlerValidates(t *testing.T) {
+	w := do(SetLanguage(fakeUser{}), http.MethodPut, "/users/me/language", `{"language":"en"}`)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"language":"en"`)
+
+	for _, body := range []string{`{}`, `{"language":"de"}`, `{`} {
+		w = do(SetLanguage(fakeUser{}), http.MethodPut, "/users/me/language", body)
+		assert.Equal(t, http.StatusBadRequest, w.Code, body)
+		assert.Contains(t, w.Body.String(), `"error"`)
+	}
 }

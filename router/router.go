@@ -42,6 +42,7 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		userGroup.POST("/auth/logout", handlers.Logout(services.Auth))
 		userGroup.GET("/users/me", handlers.GetMe(services.User))
 		userGroup.PUT("/users/me", handlers.UpdateMe(services.User))
+		userGroup.PUT("/users/me/language", handlers.SetLanguage(services.User))
 		userGroup.DELETE("/users/me", handlers.DeleteMe(services.User))
 	}
 

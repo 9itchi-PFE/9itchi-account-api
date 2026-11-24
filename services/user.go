@@ -24,6 +24,8 @@ type UserService interface {
 	GetMe(ctx context.Context, userID string) (*api.UserResponse, *models.ApiError)
 	// PUT /users/me: update profile (name only)
 	UpdateMe(ctx context.Context, userID string, req api.UpdateMeRequest) (*api.UserResponse, *models.ApiError)
+	// PUT /users/me/language: the language 9itchi writes to the caller in (emails, notifications)
+	SetLanguage(ctx context.Context, userID string, req api.SetLanguageRequest) (*api.UserResponse, *models.ApiError)
 	// DELETE /users/me: delete account and data (right to erasure)
 	DeleteMe(ctx context.Context, userID string) (*api.MessageResponse, *models.ApiError)
 	// GET /admin/users: list and search users
@@ -73,6 +75,27 @@ func (s *userService) GetMe(ctx context.Context, userID string) (*api.UserRespon
 	res := mapping.UserToResponse(u)
 	return &res, nil
 }
+
+func (s *userService) SetLanguage(ctx context.Context, userID string, req api.SetLanguageRequest) (*api.UserResponse, *models.ApiError) {
+	if !isUUID(userID) {
+		return nil, badRequest("invalid user id")
+	}
+	if !languages[req.Language] {
+		return nil, badRequest("language must be fr, en or ar")
+	}
+	u, err := s.repo.UpdateLanguage(ctx, userID, req.Language)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, internalError("user language", err)
+	}
+	res := mapping.UserToResponse(u)
+	return &res, nil
+}
+
+// languages are the languages of the interface, and so the ones 9itchi can write to a user in.
+var languages = map[string]bool{"fr": true, "en": true, "ar": true}
 
 func (s *userService) UpdateMe(ctx context.Context, userID string, req api.UpdateMeRequest) (*api.UserResponse, *models.ApiError) {
 	name := strings.TrimSpace(req.Name)

@@ -10,6 +10,7 @@ type UserResponse struct {
 	Role      string    `json:"role"`
 	Status    string    `json:"status"`
 	School    string    `json:"school,omitempty"`
+	Language  string    `json:"language"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -21,6 +22,13 @@ type InternalUserResponse struct {
 	Email  string `json:"email"`
 	Role   string `json:"role"`
 	Status string `json:"status"`
+	// Language is the language to write to the user in (fr, en or ar).
+	Language string `json:"language"`
+}
+
+// SetLanguageRequest is the validated body of SetLanguage.
+type SetLanguageRequest struct {
+	Language string `json:"language" binding:"required,oneof=fr en ar"`
 }
 
 // UpdateMeRequest is the validated body of UpdateMe (name only).

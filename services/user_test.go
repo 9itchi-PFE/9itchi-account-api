@@ -189,3 +189,26 @@ func TestDeleteUser(t *testing.T) {
 	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusNotFound, apiErr.Code)
 }
+
+func TestSetLanguage(t *testing.T) {
+	e := newUserEnv()
+	res, apiErr := e.svc.SetLanguage(context.Background(), userID, api.SetLanguageRequest{Language: "ar"})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ar", res.Language)
+
+	me, apiErr := e.svc.GetMe(context.Background(), userID)
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ar", me.Language, "the choice is kept")
+
+	for _, bad := range []string{"", "de", "FR"} {
+		_, apiErr = e.svc.SetLanguage(context.Background(), userID, api.SetLanguageRequest{Language: bad})
+		require.NotNil(t, apiErr, bad)
+		assert.Equal(t, http.StatusBadRequest, apiErr.Code)
+	}
+	_, apiErr = e.svc.SetLanguage(context.Background(), "nope", api.SetLanguageRequest{Language: "en"})
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadRequest, apiErr.Code)
+	_, apiErr = e.svc.SetLanguage(context.Background(), "33333333-3333-4333-8333-333333333333", api.SetLanguageRequest{Language: "en"})
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Code)
+}

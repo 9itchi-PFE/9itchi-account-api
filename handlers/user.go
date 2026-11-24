@@ -39,6 +39,23 @@ func UpdateMe(svc services.UserService) gin.HandlerFunc {
 	}
 }
 
+// SetLanguage: PUT /users/me/language (user) the language 9itchi writes to the caller in.
+func SetLanguage(svc services.UserService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req api.SetLanguageRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			models.FormatError(c, &models.ApiError{Code: http.StatusBadRequest, Error: err})
+			return
+		}
+		result, apiErr := svc.SetLanguage(c.Request.Context(), c.GetString("user_id"), req)
+		if apiErr != nil {
+			models.FormatError(c, apiErr)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	}
+}
+
 // DeleteMe: DELETE /users/me (user) delete account and data (right to erasure).
 func DeleteMe(svc services.UserService) gin.HandlerFunc {
 	return func(c *gin.Context) {

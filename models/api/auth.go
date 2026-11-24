@@ -7,6 +7,8 @@ type SignupRequest struct {
 	Password string `json:"password" binding:"required,min=8,max=72"`
 	// School is optional: a short code such as ENIS chosen on the sign-up screen.
 	School string `json:"school" binding:"max=120"`
+	// Language is optional: the language of the interface at sign-up (fr when absent).
+	Language string `json:"language" binding:"omitempty,oneof=fr en ar"`
 }
 
 // LoginRequest is the validated body of Login.

@@ -56,6 +56,9 @@ func (m *UserRepo) Create(_ context.Context, u *db.User) (*db.User, error) {
 		return nil, repositories.ErrConflict
 	}
 	c := *u
+	if c.Language == "" {
+		c.Language = db.DefaultLanguage
+	}
 	m.Add(&c)
 	r := c
 	return &r, nil
@@ -94,6 +97,19 @@ func (m *UserRepo) UpdateProfile(_ context.Context, id, name string, school *str
 	}
 	c := *u
 	return &c, nil
+}
+
+func (m *UserRepo) UpdateLanguage(_ context.Context, id, language string) (*db.User, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	u, ok := m.Users[id]
+	if !ok {
+		return nil, repositories.ErrNotFound
+	}
+	u.Language = language
+	r := *u
+	return &r, nil
 }
 
 func (m *UserRepo) UpdateName(_ context.Context, id, name string) (*db.User, error) {
