@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"9itchi-account-api/core"
+	"9itchi-account-api/models"
 	"9itchi-account-api/models/api"
 	"9itchi-account-api/models/db"
 	"9itchi-account-api/services/mocks"
@@ -46,7 +47,7 @@ func newAuthEnv(cfg utils.AppConfig) *authEnv {
 			return e.profile, e.exchangeErr
 		},
 	}
-	e.svc = NewAuthService(cfg, e.users, e.repo, mocks.Transactor{}, e.mailer, google)
+	e.svc = NewAuthService(cfg, e.users, e.repo, mocks.Transactor{}, e.mailer, google, google)
 	return e
 }
 
@@ -339,6 +340,23 @@ func TestResetPassword(t *testing.T) {
 	})
 }
 
+func TestLinkedInSignIn(t *testing.T) {
+	e := newAuthEnv(testCfg)
+	res, apiErr := e.svc.LinkedInSignIn(context.Background())
+	require.Nil(t, apiErr)
+	assert.GreaterOrEqual(t, len(res.State), 32)
+	assert.Contains(t, res.URL, "state="+res.State)
+
+	svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil, nil)
+	_, apiErr = svc.LinkedInSignIn(context.Background())
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
+	assert.Equal(t, "linkedin sign-in unavailable", apiErr.Error.Error())
+	_, apiErr = svc.LinkedInCallback(context.Background(), api.OAuthCallbackRequest{Code: "c", State: "s", CookieState: "s"})
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
+}
+
 func TestGoogleSignIn(t *testing.T) {
 	t.Run("returns consent url carrying a random state", func(t *testing.T) {
 		e := newAuthEnv(testCfg)
@@ -351,7 +369,7 @@ func TestGoogleSignIn(t *testing.T) {
 	})
 
 	t.Run("unavailable when unconfigured", func(t *testing.T) {
-		svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil)
+		svc := NewAuthService(testCfg, mocks.NewUserRepo(), mocks.NewAuthRepo(), mocks.Transactor{}, &mocks.Mailer{}, nil, nil)
 		_, apiErr := svc.GoogleSignIn(context.Background())
 		require.NotNil(t, apiErr)
 		assert.Equal(t, http.StatusServiceUnavailable, apiErr.Code)
@@ -362,11 +380,29 @@ func TestGoogleSignIn(t *testing.T) {
 	})
 }
 
-func TestGoogleCallback(t *testing.T) {
+// TestOAuthCallback runs the same contract for every sign-in provider.
+func TestOAuthCallback(t *testing.T) {
+	providers := []struct {
+		name     string
+		callback func(AuthService, context.Context, api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError)
+	}{
+		{"google", AuthService.GoogleCallback},
+		{"linkedin", AuthService.LinkedInCallback},
+	}
+	for _, p := range providers {
+		t.Run(p.name, func(t *testing.T) {
+			testOAuthCallback(t, p.name, func(svc AuthService, ctx context.Context, req api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError) {
+				return p.callback(svc, ctx, req)
+			})
+		})
+	}
+}
+
+func testOAuthCallback(t *testing.T, provider string, callback func(AuthService, context.Context, api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError)) {
 	ctx := context.Background()
 	cfg := testCfg
 	cfg.FrontendURL = "http://front.example/"
-	const failURL = "http://front.example/auth/signin?error=google_failed"
+	failURL := "http://front.example/auth/signin?error=" + provider + "_failed"
 	okReq := api.GoogleCallbackRequest{Code: "code-1", State: "state-1", CookieState: "state-1"}
 	verified := core.GoogleProfile{Email: "Ann@Example.com", EmailVerified: true, Name: "Ann G"}
 
@@ -396,7 +432,7 @@ func TestGoogleCallback(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(e)
 			}
-			res, apiErr := e.svc.GoogleCallback(ctx, tt.req)
+			res, apiErr := callback(e.svc, ctx, tt.req)
 			require.Nil(t, apiErr)
 			assert.Equal(t, failURL, res.URL)
 			assert.Equal(t, tt.wantExchange, e.exchangedCode != "")
@@ -426,7 +462,7 @@ func TestGoogleCallback(t *testing.T) {
 	t.Run("new user is created and signed in", func(t *testing.T) {
 		e := newAuthEnv(cfg)
 		e.profile = verified
-		res, apiErr := e.svc.GoogleCallback(ctx, okReq)
+		res, apiErr := callback(e.svc, ctx, okReq)
 		require.Nil(t, apiErr)
 		assertFragmentTokens(t, e, res, "ann@example.com")
 		u, err := e.users.GetByEmail(ctx, "ann@example.com")
@@ -441,7 +477,7 @@ func TestGoogleCallback(t *testing.T) {
 		e := newAuthEnv(cfg)
 		e.profile = verified
 		existing := e.addUser(t, "ann@example.com", db.StatusActive)
-		res, apiErr := e.svc.GoogleCallback(ctx, okReq)
+		res, apiErr := callback(e.svc, ctx, okReq)
 		require.Nil(t, apiErr)
 		assertFragmentTokens(t, e, res, "ann@example.com")
 		assert.Len(t, e.users.Users, 1)

@@ -3,6 +3,7 @@ package services
 import (
 	"9itchi-account-api/core"
 	"9itchi-account-api/pkg/google"
+	"9itchi-account-api/pkg/linkedin"
 	"9itchi-account-api/pkg/mailgun"
 	"9itchi-account-api/pkg/notification"
 	"9itchi-account-api/pkg/payments"
@@ -30,6 +31,10 @@ func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Ser
 	if config.GoogleClientID != "" && config.GoogleClientSecret != "" {
 		googleOAuth = google.New(config.GoogleClientID, config.GoogleClientSecret, config.GoogleRedirectURL)
 	}
+	var linkedinOAuth core.OAuthProvider
+	if config.LinkedInClientID != "" && config.LinkedInClientSecret != "" {
+		linkedinOAuth = linkedin.New(config.LinkedInClientID, config.LinkedInClientSecret, config.LinkedInRedirectURL)
+	}
 	var mailer core.Mailer = core.NoopMailer{}
 	if config.MailgunAPIKey != "" && config.MailgunDomain != "" {
 		mailer = core.AsyncMailer{
@@ -46,7 +51,7 @@ func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Ser
 		utils.Logger.Info("mailgun not configured: password reset mails are disabled")
 	}
 	return &Services{
-		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, mailer, googleOAuth),
+		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, mailer, googleOAuth, linkedinOAuth),
 		User: NewUserService(repos.User, repos.Auth, repos.Store),
 		Clients: &Clients{
 			Notification: notification.New(config.NotificationAPIURL, config.InternalAPIKey),

@@ -1,6 +1,6 @@
 # 9itchi-account-api
 
-Authentication and identity hub. Signup, login, JWT issue/refresh, Google sign-in, profiles, roles, account deletion, admin user management.
+Authentication and identity hub. Signup, login, JWT issue/refresh, Google and LinkedIn sign-in, profiles, roles, account deletion, admin user management.
 
 Port `8081`, health `/health`. All endpoints are implemented.
 
@@ -30,6 +30,8 @@ Access token 15 min, refresh token 7 days (stored hashed, rotated on refresh). P
 | POST | `/auth/reset-password` | public | ResetPassword |
 | GET | `/auth/google` | public | GoogleSignIn (302 to Google, 503 when unconfigured) |
 | GET | `/auth/google/callback` | public | GoogleCallback (302 to `FRONTEND_URL/auth/callback#access_token=...&refresh_token=...`, failures to `FRONTEND_URL/auth/signin?error=google_failed`) |
+| GET | `/auth/linkedin` | public | LinkedInSignIn (302 to LinkedIn, OpenID Connect; 503 when unconfigured) |
+| GET | `/auth/linkedin/callback` | public | LinkedInCallback (same redirects as Google, failures to `...?error=linkedin_failed`) |
 | GET | `/users/me` | user | GetMe |
 | PUT | `/users/me` | user | UpdateMe |
 | DELETE | `/users/me` | user | DeleteMe |

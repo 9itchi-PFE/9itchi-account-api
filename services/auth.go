@@ -28,14 +28,15 @@ import (
 )
 
 const (
-	accessTTL            = 15 * time.Minute
-	refreshTTL           = 7 * 24 * time.Hour
-	resetCodeTTL         = 15 * time.Minute
-	maxResetAttempts     = 5
-	errInvalidCreds      = "invalid credentials"
-	errInvalidRefresh    = "invalid refresh token"
-	errInvalidResetMsg   = "invalid or expired code"
-	errGoogleUnavailable = "google sign-in unavailable"
+	accessTTL              = 15 * time.Minute
+	refreshTTL             = 7 * 24 * time.Hour
+	resetCodeTTL           = 15 * time.Minute
+	maxResetAttempts       = 5
+	errInvalidCreds        = "invalid credentials"
+	errInvalidRefresh      = "invalid refresh token"
+	errInvalidResetMsg     = "invalid or expired code"
+	errGoogleUnavailable   = "google sign-in unavailable"
+	errLinkedInUnavailable = "linkedin sign-in unavailable"
 )
 
 // AuthService holds all business logic for auth. Handlers stay thin.
@@ -56,21 +57,26 @@ type AuthService interface {
 	GoogleSignIn(ctx context.Context) (*api.GoogleStart, *models.ApiError)
 	// GET /auth/google/callback: finish Google OAuth2 sign-in; every failure is a redirect to the frontend sign-in page
 	GoogleCallback(ctx context.Context, req api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError)
+	// GET /auth/linkedin: start LinkedIn (OpenID Connect) sign-in (503 when not configured)
+	LinkedInSignIn(ctx context.Context) (*api.OAuthStart, *models.ApiError)
+	// GET /auth/linkedin/callback: finish LinkedIn sign-in; every failure is a redirect to the frontend sign-in page
+	LinkedInCallback(ctx context.Context, req api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError)
 	// BootstrapAdmin creates the first admin from ADMIN_EMAIL/ADMIN_PASSWORD when no admin exists.
 	BootstrapAdmin(ctx context.Context) error
 }
 
 type authService struct {
-	cfg    utils.AppConfig
-	users  repositories.UserRepository
-	repo   repositories.AuthRepository
-	tx     repositories.Transactor
-	mailer core.Mailer
-	google core.GoogleOAuth
+	cfg      utils.AppConfig
+	users    repositories.UserRepository
+	repo     repositories.AuthRepository
+	tx       repositories.Transactor
+	mailer   core.Mailer
+	google   core.OAuthProvider
+	linkedin core.OAuthProvider
 }
 
-func NewAuthService(cfg utils.AppConfig, users repositories.UserRepository, repo repositories.AuthRepository, tx repositories.Transactor, mailer core.Mailer, google core.GoogleOAuth) AuthService {
-	return &authService{cfg: cfg, users: users, repo: repo, tx: tx, mailer: mailer, google: google}
+func NewAuthService(cfg utils.AppConfig, users repositories.UserRepository, repo repositories.AuthRepository, tx repositories.Transactor, mailer core.Mailer, google, linkedin core.OAuthProvider) AuthService {
+	return &authService{cfg: cfg, users: users, repo: repo, tx: tx, mailer: mailer, google: google, linkedin: linkedin}
 }
 
 var (
@@ -281,30 +287,49 @@ func (s *authService) ResetPassword(ctx context.Context, req api.ResetPasswordRe
 }
 
 func (s *authService) GoogleSignIn(_ context.Context) (*api.GoogleStart, *models.ApiError) {
-	if s.google == nil {
-		return nil, apiError(http.StatusServiceUnavailable, errGoogleUnavailable)
-	}
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return nil, internalError("google state", err)
-	}
-	state := base64.RawURLEncoding.EncodeToString(buf)
-	return &api.GoogleStart{URL: s.google.AuthURL(state), State: state}, nil
+	return oauthStart(s.google, errGoogleUnavailable)
 }
 
 func (s *authService) GoogleCallback(ctx context.Context, req api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError) {
-	if s.google == nil {
-		return nil, apiError(http.StatusServiceUnavailable, errGoogleUnavailable)
+	return s.oauthCallback(ctx, s.google, "google", errGoogleUnavailable, req)
+}
+
+func (s *authService) LinkedInSignIn(_ context.Context) (*api.OAuthStart, *models.ApiError) {
+	return oauthStart(s.linkedin, errLinkedInUnavailable)
+}
+
+func (s *authService) LinkedInCallback(ctx context.Context, req api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError) {
+	return s.oauthCallback(ctx, s.linkedin, "linkedin", errLinkedInUnavailable, req)
+}
+
+// oauthStart returns the provider consent URL with a fresh random state (503 when the provider is not configured).
+func oauthStart(provider core.OAuthProvider, unavailable string) (*api.OAuthStart, *models.ApiError) {
+	if provider == nil {
+		return nil, apiError(http.StatusServiceUnavailable, unavailable)
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, internalError("oauth state", err)
+	}
+	state := base64.RawURLEncoding.EncodeToString(buf)
+	return &api.OAuthStart{URL: provider.AuthURL(state), State: state}, nil
+}
+
+// oauthCallback checks the state, exchanges the code and signs the user in (creating a password-less account if needed).
+// Every failure is a redirect to the frontend sign-in page with error=<name>_failed; the reason is only logged.
+func (s *authService) oauthCallback(ctx context.Context, provider core.OAuthProvider, name, unavailable string, req api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError) {
+	if provider == nil {
+		return nil, apiError(http.StatusServiceUnavailable, unavailable)
 	}
 	frontend := strings.TrimRight(s.cfg.FrontendURL, "/")
-	failed := &api.GoogleRedirect{URL: frontend + "/auth/signin?error=google_failed"}
+	failed := &api.OAuthRedirect{URL: frontend + "/auth/signin?error=" + name + "_failed"}
 
 	if req.CookieState == "" || req.Code == "" || subtle.ConstantTimeCompare([]byte(req.State), []byte(req.CookieState)) != 1 {
 		return failed, nil
 	}
-	profile, err := s.google.Exchange(ctx, req.Code)
+	profile, err := provider.Exchange(ctx, req.Code)
 	if err != nil {
-		utils.Logger.Warn("google exchange", zap.Error(err))
+		utils.Logger.Warn("oauth exchange", zap.String("provider", name), zap.Error(err))
 		return failed, nil
 	}
 	email := normalizeEmail(profile.Email)
@@ -313,10 +338,10 @@ func (s *authService) GoogleCallback(ctx context.Context, req api.GoogleCallback
 	}
 	user, err := s.users.GetByEmail(ctx, email)
 	if errors.Is(err, repositories.ErrNotFound) {
-		user, err = s.createGoogleUser(ctx, email, profile.Name)
+		user, err = s.createOAuthUser(ctx, email, profile.Name)
 	}
 	if err != nil {
-		utils.Logger.Error("google user", zap.Error(err))
+		utils.Logger.Error("oauth user", zap.String("provider", name), zap.Error(err))
 		return failed, nil
 	}
 	if user.Status == db.StatusSuspended {
@@ -324,15 +349,15 @@ func (s *authService) GoogleCallback(ctx context.Context, req api.GoogleCallback
 	}
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
-		utils.Logger.Error("google tokens", zap.Error(err))
+		utils.Logger.Error("oauth tokens", zap.String("provider", name), zap.Error(err))
 		return failed, nil
 	}
 	fragment := url.Values{"access_token": {access}, "refresh_token": {refresh}}.Encode()
-	return &api.GoogleRedirect{URL: frontend + "/auth/callback#" + fragment}, nil
+	return &api.OAuthRedirect{URL: frontend + "/auth/callback#" + fragment}, nil
 }
 
-// createGoogleUser registers a password-less account: the stored hash is of random bytes nobody knows.
-func (s *authService) createGoogleUser(ctx context.Context, email, name string) (*db.User, error) {
+// createOAuthUser registers a password-less account: the stored hash is of random bytes nobody knows.
+func (s *authService) createOAuthUser(ctx context.Context, email, name string) (*db.User, error) {
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err

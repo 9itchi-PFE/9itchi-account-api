@@ -23,6 +23,16 @@ type fakeAuth struct {
 	logout func(string, api.LogoutRequest) (*api.MessageResponse, *models.ApiError)
 	gstart func() (*api.GoogleStart, *models.ApiError)
 	gcb    func(api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError)
+	lstart func() (*api.OAuthStart, *models.ApiError)
+	lcb    func(api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError)
+}
+
+func (f fakeAuth) LinkedInSignIn(context.Context) (*api.OAuthStart, *models.ApiError) {
+	return f.lstart()
+}
+
+func (f fakeAuth) LinkedInCallback(_ context.Context, r api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError) {
+	return f.lcb(r)
 }
 
 func (f fakeAuth) Signup(_ context.Context, r api.SignupRequest) (*api.AuthResponse, *models.ApiError) {
@@ -138,4 +148,44 @@ func TestGoogleHandlers(t *testing.T) {
 	w = do(GoogleSignIn(unavailable), http.MethodGet, "/auth/google", "")
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"google sign-in unavailable"`)
+}
+
+func TestLinkedInHandlers(t *testing.T) {
+	var gotReq api.OAuthCallbackRequest
+	svc := fakeAuth{
+		lstart: func() (*api.OAuthStart, *models.ApiError) {
+			return &api.OAuthStart{URL: "https://www.linkedin.example/consent", State: "ls"}, nil
+		},
+		lcb: func(r api.OAuthCallbackRequest) (*api.OAuthRedirect, *models.ApiError) {
+			gotReq = r
+			return &api.OAuthRedirect{URL: "http://front/auth/callback#access_token=a"}, nil
+		},
+	}
+
+	w := do(LinkedInSignIn(svc), http.MethodGet, "/auth/linkedin", "")
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "https://www.linkedin.example/consent", w.Header().Get("Location"))
+	cookie := w.Result().Cookies()[0]
+	assert.Equal(t, linkedinStateCookie, cookie.Name)
+	assert.Equal(t, "ls", cookie.Value)
+	assert.Equal(t, "/auth/linkedin", cookie.Path)
+	assert.True(t, cookie.HttpOnly)
+
+	gin.SetMode(gin.TestMode)
+	w = httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/auth/linkedin/callback?code=cd&state=ls", nil)
+	c.Request.AddCookie(&http.Cookie{Name: linkedinStateCookie, Value: "ls"})
+	c.Request.AddCookie(&http.Cookie{Name: googleStateCookie, Value: "other"})
+	LinkedInCallback(svc)(c)
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, api.OAuthCallbackRequest{Code: "cd", State: "ls", CookieState: "ls"}, gotReq, "reads its own cookie only")
+	assert.Negative(t, w.Result().Cookies()[0].MaxAge, "state cookie is cleared")
+
+	unavailable := fakeAuth{lstart: func() (*api.OAuthStart, *models.ApiError) {
+		return nil, &models.ApiError{Code: http.StatusServiceUnavailable, Error: errors.New("linkedin sign-in unavailable")}
+	}}
+	w = do(LinkedInSignIn(unavailable), http.MethodGet, "/auth/linkedin", "")
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"linkedin sign-in unavailable"`)
 }
