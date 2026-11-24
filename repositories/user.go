@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const userColumns = `id, name, email, password_hash, role, status, plan_id, created_at, updated_at`
+const userColumns = `id, name, email, password_hash, role, status, created_at, updated_at`
 
 // UserFilter selects users for the admin list. Empty strings mean "no filter".
 type UserFilter struct {

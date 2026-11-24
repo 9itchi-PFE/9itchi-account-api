@@ -8,7 +8,7 @@ import (
 func UserToResponse(u *db.User) api.UserResponse {
 	return api.UserResponse{
 		ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role, Status: u.Status,
-		PlanID: u.PlanID, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 }
 

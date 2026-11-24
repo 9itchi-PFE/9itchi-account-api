@@ -75,7 +75,7 @@ func TestSignupHandler(t *testing.T) {
 
 	w := do(Signup(svc), http.MethodPost, "/auth/signup", `{"name":"Ann","email":"ann@example.com","password":"Passw0rdX"}`)
 	assert.Equal(t, http.StatusCreated, w.Code)
-	assert.JSONEq(t, `{"user":{"id":"","name":"","email":"","role":"","status":"","plan_id":null,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},"access_token":"a","refresh_token":"r"}`, w.Body.String())
+	assert.JSONEq(t, `{"user":{"id":"","name":"","email":"","role":"","status":"","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},"access_token":"a","refresh_token":"r"}`, w.Body.String())
 	assert.Equal(t, "ann@example.com", got.Email)
 
 	w = do(Signup(svc), http.MethodPost, "/auth/signup", `{"name":"Ann","email":"dup@example.com","password":"Passw0rdX"}`)

@@ -25,7 +25,6 @@ func TestUserCRUD(t *testing.T) {
 	u, err := repo.Create(ctx, newUser("ann@example.com"))
 	require.NoError(t, err)
 	assert.Len(t, u.ID, 36)
-	assert.Nil(t, u.PlanID)
 
 	_, err = repo.Create(ctx, newUser("ann@example.com"))
 	assert.ErrorIs(t, err, ErrConflict, "duplicate email")

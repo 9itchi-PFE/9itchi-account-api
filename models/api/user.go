@@ -9,7 +9,6 @@ type UserResponse struct {
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
 	Status    string    `json:"status"`
-	PlanID    *string   `json:"plan_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
