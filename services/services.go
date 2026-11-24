@@ -17,6 +17,7 @@ import (
 type Services struct {
 	Auth    AuthService
 	User    UserService
+	Note    NoteService
 	Clients *Clients
 }
 
@@ -53,6 +54,7 @@ func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Ser
 	return &Services{
 		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, mailer, googleOAuth, linkedinOAuth, core.NewPublisher(config.RabbitMQURL)),
 		User: NewUserService(repos.User, repos.Auth, repos.Store),
+		Note: NewNoteService(repos.Note, repos.User),
 		Clients: &Clients{
 			Notification: notification.New(config.NotificationAPIURL, config.InternalAPIKey),
 			Payments:     payments.New(config.PaymentsAPIURL, config.InternalAPIKey),

@@ -54,6 +54,8 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		adminGroup.GET("/admin/users/:id", handlers.GetUser(services.User))
 		adminGroup.PUT("/admin/users/:id/suspend", handlers.SuspendUser(services.User))
 		adminGroup.DELETE("/admin/users/:id", handlers.DeleteUser(services.User))
+		adminGroup.GET("/admin/users/:id/note", handlers.GetUserNote(services.Note))
+		adminGroup.PUT("/admin/users/:id/note", handlers.SetUserNote(services.Note))
 	}
 
 	// internal endpoints
