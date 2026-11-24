@@ -9,6 +9,7 @@ type UserResponse struct {
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
 	Status    string    `json:"status"`
+	School    string    `json:"school,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -25,6 +26,8 @@ type InternalUserResponse struct {
 // UpdateMeRequest is the validated body of UpdateMe (name only).
 type UpdateMeRequest struct {
 	Name string `json:"name" binding:"required,max=100"`
+	// School, when present, replaces the school; "" clears it.
+	School *string `json:"school" binding:"omitempty,max=120"`
 }
 
 // SuspendUserRequest is the validated body of SuspendUser.

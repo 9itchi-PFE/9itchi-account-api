@@ -59,6 +59,17 @@ func TestUpdateMe(t *testing.T) {
 	assert.Equal(t, "New Name", res.Name)
 	assert.Equal(t, "ann@example.com", res.Email, "only name changes")
 
+	enis, empty := " ENIS ", ""
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "New Name", School: &enis})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ENIS", res.School)
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "New Name"})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ENIS", res.School, "no school in the body keeps it")
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "New Name", School: &empty})
+	require.Nil(t, apiErr)
+	assert.Empty(t, res.School, "an empty school clears it")
+
 	_, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "   "})
 	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusBadRequest, apiErr.Code)

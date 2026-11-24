@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const userColumns = `id, name, email, password_hash, role, status, created_at, updated_at`
+const userColumns = `id, name, email, password_hash, role, status, school, created_at, updated_at`
 
 // UserFilter selects users for the admin list. Empty strings mean "no filter".
 type UserFilter struct {
@@ -25,6 +25,8 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*db.User, error)
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
 	UpdateName(ctx context.Context, id, name string) (*db.User, error)
+	// UpdateProfile sets the name and, when school is not nil, the school ("" clears it).
+	UpdateProfile(ctx context.Context, id, name string, school *string) (*db.User, error)
 	UpdateStatus(ctx context.Context, id, status string) (*db.User, error)
 	UpdatePassword(ctx context.Context, id, passwordHash string) error
 	Delete(ctx context.Context, id string) error
@@ -52,8 +54,8 @@ func (r *userRepository) one(ctx context.Context, sql string, args ...any) (*db.
 }
 
 func (r *userRepository) Create(ctx context.Context, u *db.User) (*db.User, error) {
-	return r.one(ctx, `INSERT INTO users (name, email, password_hash, role, status) VALUES ($1, $2, $3, $4, $5) RETURNING `+userColumns,
-		u.Name, u.Email, u.PasswordHash, u.Role, u.Status)
+	return r.one(ctx, `INSERT INTO users (name, email, password_hash, role, status, school) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+userColumns,
+		u.Name, u.Email, u.PasswordHash, u.Role, u.Status, u.School)
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id string) (*db.User, error) {
@@ -66,6 +68,15 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*db.User
 
 func (r *userRepository) UpdateName(ctx context.Context, id, name string) (*db.User, error) {
 	return r.one(ctx, `UPDATE users SET name = $2, updated_at = now() WHERE id = $1 RETURNING `+userColumns, id, name)
+}
+
+func (r *userRepository) UpdateProfile(ctx context.Context, id, name string, school *string) (*db.User, error) {
+	set, value := school != nil, ""
+	if school != nil {
+		value = *school
+	}
+	return r.one(ctx, `UPDATE users SET name = $2, school = CASE WHEN $3 THEN NULLIF($4, '') ELSE school END, updated_at = now()
+		WHERE id = $1 RETURNING `+userColumns, id, name, set, value)
 }
 
 func (r *userRepository) UpdateStatus(ctx context.Context, id, status string) (*db.User, error) {
