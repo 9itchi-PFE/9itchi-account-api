@@ -119,26 +119,28 @@ const (
 	googleStateCookie   = "google_oauth_state"
 	linkedinStateCookie = "linkedin_oauth_state"
 	oauthStateMaxAge    = 10 * 60
+	// The service sits behind a gateway prefix (/api/account), so a provider-specific path would never match the browser URL.
+	oauthCookiePath = "/"
 )
 
 // GoogleSignIn: GET /auth/google (public) start Google OAuth2 sign-in.
 func GoogleSignIn(svc services.AuthService) gin.HandlerFunc {
-	return oauthSignIn(svc.GoogleSignIn, googleStateCookie, "/auth/google")
+	return oauthSignIn(svc.GoogleSignIn, googleStateCookie, oauthCookiePath)
 }
 
 // GoogleCallback: GET /auth/google/callback (public) finish Google OAuth2 sign-in.
 func GoogleCallback(svc services.AuthService) gin.HandlerFunc {
-	return oauthCallback(svc.GoogleCallback, googleStateCookie, "/auth/google")
+	return oauthCallback(svc.GoogleCallback, googleStateCookie, oauthCookiePath)
 }
 
 // LinkedInSignIn: GET /auth/linkedin (public) start LinkedIn OpenID Connect sign-in.
 func LinkedInSignIn(svc services.AuthService) gin.HandlerFunc {
-	return oauthSignIn(svc.LinkedInSignIn, linkedinStateCookie, "/auth/linkedin")
+	return oauthSignIn(svc.LinkedInSignIn, linkedinStateCookie, oauthCookiePath)
 }
 
 // LinkedInCallback: GET /auth/linkedin/callback (public) finish LinkedIn sign-in.
 func LinkedInCallback(svc services.AuthService) gin.HandlerFunc {
-	return oauthCallback(svc.LinkedInCallback, linkedinStateCookie, "/auth/linkedin")
+	return oauthCallback(svc.LinkedInCallback, linkedinStateCookie, oauthCookiePath)
 }
 
 // oauthSignIn stores the state in an HttpOnly cookie scoped to the provider path and redirects to the consent page.

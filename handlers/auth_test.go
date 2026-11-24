@@ -168,7 +168,7 @@ func TestLinkedInHandlers(t *testing.T) {
 	cookie := w.Result().Cookies()[0]
 	assert.Equal(t, linkedinStateCookie, cookie.Name)
 	assert.Equal(t, "ls", cookie.Value)
-	assert.Equal(t, "/auth/linkedin", cookie.Path)
+	assert.Equal(t, "/", cookie.Path)
 	assert.True(t, cookie.HttpOnly)
 
 	gin.SetMode(gin.TestMode)
