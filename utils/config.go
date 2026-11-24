@@ -29,7 +29,11 @@ type AppConfig struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
-	// FrontendURL is where the Google callback sends the browser (tokens in the URL fragment).
+	// LinkedIn sign-in is disabled (503) while LinkedInClientID or LinkedInClientSecret is empty. Never log the secret.
+	LinkedInClientID     string
+	LinkedInClientSecret string
+	LinkedInRedirectURL  string
+	// FrontendURL is where the Google and LinkedIn callbacks sends the browser (tokens in the URL fragment).
 	FrontendURL string
 	// Mailgun sends password reset mails; disabled (NoopMailer) while the API key or domain is empty. Never log the key.
 	MailgunAPIKey    string
@@ -57,6 +61,9 @@ func LoadConfig() AppConfig {
 		GoogleClientID:         getStringWithDefault("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret:     getStringWithDefault("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:      getStringWithDefault("GOOGLE_REDIRECT_URL", "http://localhost:8081/auth/google/callback"),
+		LinkedInClientID:       getStringWithDefault("LINKEDIN_CLIENT_ID", ""),
+		LinkedInClientSecret:   getStringWithDefault("LINKEDIN_CLIENT_SECRET", ""),
+		LinkedInRedirectURL:    getStringWithDefault("LINKEDIN_REDIRECT_URL", "http://localhost:8081/auth/linkedin/callback"),
 		FrontendURL:            getStringWithDefault("FRONTEND_URL", "http://localhost:3000"),
 		MailgunAPIKey:          getStringWithDefault("MAILGUN_API_KEY", ""),
 		MailgunDomain:          getStringWithDefault("MAILGUN_DOMAIN", ""),

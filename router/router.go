@@ -31,6 +31,8 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		r.POST("/auth/reset-password", handlers.ResetPassword(services.Auth))
 		r.GET("/auth/google", handlers.GoogleSignIn(services.Auth))
 		r.GET("/auth/google/callback", handlers.GoogleCallback(services.Auth))
+		r.GET("/auth/linkedin", handlers.LinkedInSignIn(services.Auth))
+		r.GET("/auth/linkedin/callback", handlers.LinkedInCallback(services.Auth))
 	}
 
 	// user endpoints

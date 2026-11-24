@@ -18,7 +18,6 @@ type User struct {
 	PasswordHash string    `db:"password_hash" json:"-"`
 	Role         string    `db:"role" json:"role"`
 	Status       string    `db:"status" json:"status"`
-	PlanID       *string   `db:"plan_id" json:"plan_id"`
 	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
