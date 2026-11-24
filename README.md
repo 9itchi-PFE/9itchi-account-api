@@ -40,6 +40,7 @@ A publish failure is logged and never fails the signup. A broker that cannot be 
 | GET | `/auth/linkedin/callback` | public | LinkedInCallback (same redirects as Google, failures to `...?error=linkedin_failed`) |
 | GET | `/users/me` | user | GetMe |
 | PUT | `/users/me` | user | UpdateMe |
+| PUT | `/users/me/language` | user | SetLanguage (`fr`, `en` or `ar`: the language 9itchi writes to the user in; also accepted at signup, `fr` by default) |
 | DELETE | `/users/me` | user | DeleteMe |
 | GET | `/admin/users` | admin | ListUsers |
 | GET | `/admin/users/:id` | admin | GetUser |

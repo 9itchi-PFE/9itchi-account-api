@@ -136,7 +136,7 @@ func (s *authService) Signup(ctx context.Context, req api.SignupRequest) (*api.A
 	}
 	user, err := s.users.Create(ctx, &db.User{
 		Name: name, Email: normalizeEmail(req.Email), PasswordHash: string(hash),
-		Role: db.RoleCandidate, Status: db.StatusActive, School: school,
+		Role: db.RoleCandidate, Status: db.StatusActive, School: school, Language: req.Language,
 	})
 	if errors.Is(err, repositories.ErrConflict) {
 		return nil, apiError(http.StatusConflict, "email already registered")

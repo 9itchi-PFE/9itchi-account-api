@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const userColumns = `id, name, email, password_hash, role, status, school, created_at, updated_at`
+const userColumns = `id, name, email, password_hash, role, status, school, language, created_at, updated_at`
 
 // UserFilter selects users for the admin list. Empty strings mean "no filter".
 type UserFilter struct {
@@ -27,6 +27,8 @@ type UserRepository interface {
 	UpdateName(ctx context.Context, id, name string) (*db.User, error)
 	// UpdateProfile sets the name and, when school is not nil, the school ("" clears it).
 	UpdateProfile(ctx context.Context, id, name string, school *string) (*db.User, error)
+	// UpdateLanguage sets the language 9itchi writes to the user in.
+	UpdateLanguage(ctx context.Context, id, language string) (*db.User, error)
 	UpdateStatus(ctx context.Context, id, status string) (*db.User, error)
 	UpdatePassword(ctx context.Context, id, passwordHash string) error
 	Delete(ctx context.Context, id string) error
@@ -54,8 +56,9 @@ func (r *userRepository) one(ctx context.Context, sql string, args ...any) (*db.
 }
 
 func (r *userRepository) Create(ctx context.Context, u *db.User) (*db.User, error) {
-	return r.one(ctx, `INSERT INTO users (name, email, password_hash, role, status, school) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+userColumns,
-		u.Name, u.Email, u.PasswordHash, u.Role, u.Status, u.School)
+	return r.one(ctx, `INSERT INTO users (name, email, password_hash, role, status, school, language)
+		VALUES ($1, $2, $3, $4, $5, $6, COALESCE(NULLIF($7, ''), 'fr')) RETURNING `+userColumns,
+		u.Name, u.Email, u.PasswordHash, u.Role, u.Status, u.School, u.Language)
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id string) (*db.User, error) {
@@ -77,6 +80,10 @@ func (r *userRepository) UpdateProfile(ctx context.Context, id, name string, sch
 	}
 	return r.one(ctx, `UPDATE users SET name = $2, school = CASE WHEN $3 THEN NULLIF($4, '') ELSE school END, updated_at = now()
 		WHERE id = $1 RETURNING `+userColumns, id, name, set, value)
+}
+
+func (r *userRepository) UpdateLanguage(ctx context.Context, id, language string) (*db.User, error) {
+	return r.one(ctx, `UPDATE users SET language = $2, updated_at = now() WHERE id = $1 RETURNING `+userColumns, id, language)
 }
 
 func (r *userRepository) UpdateStatus(ctx context.Context, id, status string) (*db.User, error) {

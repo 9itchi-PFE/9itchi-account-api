@@ -7,7 +7,7 @@ import (
 
 func UserToResponse(u *db.User) api.UserResponse {
 	res := api.UserResponse{
-		ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role, Status: u.Status,
+		ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role, Status: u.Status, Language: u.Language,
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 	if u.School != nil {
@@ -17,5 +17,5 @@ func UserToResponse(u *db.User) api.UserResponse {
 }
 
 func UserToInternal(u *db.User) api.InternalUserResponse {
-	return api.InternalUserResponse{ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role, Status: u.Status}
+	return api.InternalUserResponse{ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role, Status: u.Status, Language: u.Language}
 }

@@ -26,6 +26,20 @@ func TestUserCRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, u.ID, 36)
 
+	assert.Equal(t, "fr", u.Language, "French when none is given")
+	arabic := newUser("arabic@example.com")
+	arabic.Language = "ar"
+	ar, err := repo.Create(ctx, arabic)
+	require.NoError(t, err)
+	assert.Equal(t, "ar", ar.Language)
+	en, err := repo.UpdateLanguage(ctx, u.ID, "en")
+	require.NoError(t, err)
+	assert.Equal(t, "en", en.Language)
+	_, err = repo.UpdateLanguage(ctx, u.ID, "de")
+	assert.Error(t, err, "CHECK language")
+	_, err = repo.UpdateLanguage(ctx, "00000000-0000-0000-0000-000000000000", "en")
+	assert.ErrorIs(t, err, ErrNotFound)
+
 	_, err = repo.Create(ctx, newUser("ann@example.com"))
 	assert.ErrorIs(t, err, ErrConflict, "duplicate email")
 	_, err = repo.Create(ctx, newUser("Ann@Example.com"))

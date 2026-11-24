@@ -576,3 +576,14 @@ func TestGoogleFirstSignInPublishesUserRegistered(t *testing.T) {
 	require.Nil(t, apiErr)
 	assert.Len(t, e.events.names, 1)
 }
+
+func TestSignupKeepsTheLanguageOfTheInterface(t *testing.T) {
+	e := newAuthEnv(testCfg)
+	res, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!", Language: "ar"})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ar", res.User.Language)
+
+	res, apiErr = e.svc.Signup(context.Background(), api.SignupRequest{Name: "Sami", Email: "sami@example.com", Password: "Str0ng-pass!"})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "fr", res.User.Language, "French when the client names none")
+}
