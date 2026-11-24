@@ -3,7 +3,7 @@
 Authentication and identity hub. Signup, login, JWT issue/refresh, Google sign-in, profiles, roles, account deletion, admin user management.
 
 ## Stack
-Go, Gin, PostgreSQL (db `users`, pgx + goose migrations), Viper config, Zap logger. Peers over HTTP (`pkg/`): notification, payments.
+Go, Gin, PostgreSQL (db `users`, pgx + goose migrations), Viper config, Zap logger. Peers over HTTP (`pkg/`): notification, payments. Events over RabbitMQ (names in `core/events.go`).
 
 ## Layout
 `main.go`, `app/` (init order: config, repositories, services, router), `router/` (routes + middleware), `handlers/` (thin) -> `services/` (logic) -> `repositories/` (Postgres only), `core/` (interfaces/factories), `models/{api,db,mapping}`, `pkg/` (peer clients), `utils/` (config, logger).
