@@ -117,9 +117,13 @@ func (s *authService) Signup(ctx context.Context, req api.SignupRequest) (*api.A
 	if err != nil {
 		return nil, internalError("signup hash", err)
 	}
+	var school *string
+	if v := strings.TrimSpace(req.School); v != "" {
+		school = &v
+	}
 	user, err := s.users.Create(ctx, &db.User{
 		Name: name, Email: normalizeEmail(req.Email), PasswordHash: string(hash),
-		Role: db.RoleCandidate, Status: db.StatusActive,
+		Role: db.RoleCandidate, Status: db.StatusActive, School: school,
 	})
 	if errors.Is(err, repositories.ErrConflict) {
 		return nil, apiError(http.StatusConflict, "email already registered")

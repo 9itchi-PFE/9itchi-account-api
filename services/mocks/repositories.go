@@ -75,6 +75,27 @@ func (m *UserRepo) GetByEmail(_ context.Context, email string) (*db.User, error)
 	return m.find(func(x *db.User) bool { return x.Email == email })
 }
 
+func (m *UserRepo) UpdateProfile(_ context.Context, id, name string, school *string) (*db.User, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	u, ok := m.Users[id]
+	if !ok {
+		return nil, repositories.ErrNotFound
+	}
+	u.Name = name
+	if school != nil {
+		if *school == "" {
+			u.School = nil
+		} else {
+			s := *school
+			u.School = &s
+		}
+	}
+	c := *u
+	return &c, nil
+}
+
 func (m *UserRepo) UpdateName(_ context.Context, id, name string) (*db.User, error) {
 	if m.Err != nil {
 		return nil, m.Err
