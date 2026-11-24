@@ -22,6 +22,8 @@ type AppConfig struct {
 	// Peer service base URLs.
 	NotificationAPIURL string
 	PaymentsAPIURL     string
+	// RabbitMQURL is the event broker. Empty: events are only logged.
+	RabbitMQURL string
 	// AdminEmail/AdminPassword optionally bootstrap the first admin at startup (env ADMIN_EMAIL, ADMIN_PASSWORD). Never log them.
 	AdminEmail    string
 	AdminPassword string
@@ -57,6 +59,7 @@ func LoadConfig() AppConfig {
 		InternalAPIKeyRequired: getBoolWithDefault("INTERNAL_API_KEY_REQUIRED", true),
 		NotificationAPIURL:     getStringWithDefault("NOTIFICATION_API_URL", "http://9itchi-notification-api:8087"),
 		PaymentsAPIURL:         getStringWithDefault("PAYMENTS_API_URL", "http://9itchi-payments-api:8089"),
+		RabbitMQURL:            getStringWithDefault("RABBITMQ_URL", ""),
 		AdminEmail:             getStringWithDefault("ADMIN_EMAIL", ""),
 		AdminPassword:          getStringWithDefault("ADMIN_PASSWORD", ""),
 		GoogleClientID:         getStringWithDefault("GOOGLE_CLIENT_ID", ""),

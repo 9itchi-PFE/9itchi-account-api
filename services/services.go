@@ -51,7 +51,7 @@ func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Ser
 		utils.Logger.Info("mailgun not configured: password reset mails are disabled")
 	}
 	return &Services{
-		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, mailer, googleOAuth, linkedinOAuth),
+		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, mailer, googleOAuth, linkedinOAuth, core.NewPublisher(config.RabbitMQURL)),
 		User: NewUserService(repos.User, repos.Auth, repos.Store),
 		Clients: &Clients{
 			Notification: notification.New(config.NotificationAPIURL, config.InternalAPIKey),
