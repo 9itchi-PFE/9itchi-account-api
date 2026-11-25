@@ -1,23 +1,36 @@
 # 9itchi Account API
+Auth and identity hub: signup/login, JWT access (15 min) + refresh (7 d, hashed, rotated), password reset (Mailgun), Google and LinkedIn sign-in, profile, photo, language, admin users and notes, account erasure across services. Port 8081, DB `users`.
 
-Authentication and identity hub. Signup, login, JWT issue/refresh, Google sign-in, profiles, roles, account deletion, admin user management.
+## Conventions (shared by every 9itchi Go service)
+- `handlers/` thin (validate, authorize, call service, JSON) -> `services/` all logic, returns `(T, *models.ApiError)` -> `repositories/` only Postgres, plain errors (`ErrNotFound`, `ErrConflict`). Error body `{"error": "..."}`.
+- DB calls use `repositories.QueryTimeout`; multi-table writes `Store.WithTx`; never select bytea (`users.photo`) in list queries.
+- Schema: add `migrations/NNNN_name.sql` (goose, embedded, runs at startup). Never edit a merged migration.
+- Auth: `Authorization: Bearer` AES-GCM-wrapped HS256 JWT (claims `id`, `email`, `role`, `typ`, `exp`; access only). `/admin/*` = `RequireRole("admin")`. `/internal/*` = `x-api-key` (`INTERNAL_API_KEY`), blocked by nginx.
+- Events: exchange `9itchi.events` (topic, routing key = event name), names in `core/events.go`; empty `RABBITMQ_URL` = `LogPublisher`.
+- Env only, validated in `utils/config.go`. Common: `PORT`, `ENVIRONMENT`, `DATABASE_URL`, `ITCHI_SECRET_KEY`, `ITCHI_ENCRYPTION_KEY`, `INTERNAL_API_KEY`, `INTERNAL_API_KEY_REQUIRED`. Never log tokens, passwords, PII.
+- Tests: `{resource}_test.go`, testify, func-field fakes (no testify/mock), success + error paths. Repo tests: `//go:build integration`, embedded Postgres (`PG_BINARIES` for local PG 16 binaries).
+- Check: `gofmt -l .; go build ./... && go vet ./... && go test ./...`; `go test -tags integration -count=1 ./repositories/...`; `golangci-lint run --build-tags integration`.
 
-## Stack
-Go, Gin, PostgreSQL (db `users`, pgx + goose migrations), Viper config, Zap logger. Peers over HTTP (`pkg/`): notification, payments. Events over RabbitMQ (names in `core/events.go`).
+## Routes
+- Public: `POST /auth/signup|login|refresh|forgot-password|reset-password`; `GET /auth/google|linkedin`, `/auth/{google,linkedin}/callback`.
+- User: `POST /auth/logout`; `GET|PUT|DELETE /users/me`; `PUT /users/me/language`; `GET|PUT|DELETE /users/me/photo`.
+- Admin: `GET /admin/users`, `GET|DELETE /admin/users/:id`, `PUT /admin/users/:id/suspend`, `GET|PUT /admin/users/:id/note`.
+- Internal: `GET /internal/users/:id` (notification-api).
 
-## Layout
-`main.go`, `app/` (init order: config, repositories, services, router), `router/` (routes + middleware), `handlers/` (thin) -> `services/` (logic) -> `repositories/` (Postgres only), `core/` (interfaces/factories), `models/{api,db,mapping}`, `pkg/` (peer clients), `utils/` (config, logger).
+## Data, peers, events
+- Tables: `users` (`photo` bytea, one square JPEG <= 1 MiB; upload cap 5 MB before resize), `refresh_tokens`, `password_resets`, `user_notes`. Latest `0007_users_photo.sql`.
+- Eraser (`pkg/peers/eraser.go`): `DELETE /internal/users/:id` on email, resume, job, notification, chat, tracker, payments (in that order, 15 s each), then deletes the account. One failure keeps the account; retryable.
+- Publishes `user.registered` (`{user_id}`). Consumes nothing.
+- Providers: `core.OAuthProvider` Google (`pkg/google`) + LinkedIn OIDC (`pkg/linkedin`), each 503 until its ID/secret are set; `Mailer` Mailgun, else `NoopMailer`.
+- Env: `RABBITMQ_URL`, `FRONTEND_URL`, `ADMIN_EMAIL` + `ADMIN_PASSWORD` (bootstrap first admin), `{NOTIFICATION,PAYMENTS,RESUME,EMAIL,JOB,CHAT,TRACKER}_API_URL`, `GOOGLE_CLIENT_ID|SECRET|REDIRECT_URL`, `LINKEDIN_CLIENT_ID|SECRET|REDIRECT_URL`, `MAILGUN_API_KEY|DOMAIN|FROM_EMAIL|API_BASE|RATE_LIMIT`.
 
-Entities: `User`.
+## Domain rules
+- Roles `candidate` | `admin`. Language `fr` | `en` | `ar` (default `fr`). Suspended = 403 on login and refresh.
+- Unknown-email login burns a dummy bcrypt compare; forgot-password always answers generically; reset code TTL 15 min.
+- OAuth: failure redirects to frontend with `error=<provider>_failed`; tokens in URL fragment; OAuth users get a password-less account (random hash); verified email required.
+- Profile: LinkedIn/GitHub URLs reduced to canonical handles (other hosts refused); phone stored without spaces.
+- Subscription data lives only in payments-api (no `users.plan_id`).
 
-## Rules
-- Every endpoint: validate inputs -> authorize caller -> execute via service -> respond JSON. No business logic in handlers.
-- Services return `(T, *models.ApiError)`; repos return plain errors; services wrap with a status code. Error body is always `{"error": "message"}`.
-- Users are referenced by their UUID `id` (JWT claim `id`). JWT claims: `id`, `email`, `role`, `typ`, `exp`. Header `Authorization: Bearer <AES-GCM encrypted HS256 JWT>`.
-- Every DB call uses a context with a deadline (`repositories.QueryTimeout`). Schema and indexes live in `migrations/*.sql` (goose, embedded, run at startup). Multi-table writes use `Store.WithTx`. Never select blob columns in list queries.
-- Nil-check optional nested fields. Never log passwords, tokens, Gmail tokens or PII. Secrets and URLs only from env.
-- `AuthMiddleware` validates the encrypted JWT (access tokens only); internal routes need `x-api-key`.
-- Tests: `{resource}_test.go`, testify, mock dependencies, cover success and error paths. Write the test with the implementation.
-
-## Commands
-`go build ./... && go test ./...`, `golangci-lint run`, `go run main.go` (port 8081), `docker build -t 9itchi-account-api .`.
+## Gotchas
+- `pkg/notification` and `pkg/payments` clients are unused stubs.
+- LinkedIn app keys still to create; check the 7 peer URLs in production before testing deletion.
