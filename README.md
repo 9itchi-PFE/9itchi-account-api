@@ -46,6 +46,8 @@ A publish failure is logged and never fails the signup. A broker that cannot be 
 | GET | `/admin/users/:id` | admin | GetUser |
 | PUT | `/admin/users/:id/suspend` | admin | SuspendUser |
 | DELETE | `/admin/users/:id` | admin | DeleteUser |
+| GET | `/admin/users/:id/note` | admin | GetUserNote (the team's internal note about a user; never returned to the user) |
+| PUT | `/admin/users/:id/note` | admin | SetUserNote (body `note`, 2000 characters at most; empty empties it) |
 | GET | `/internal/users/:id` | internal | InternalGetUser |
 
 ## Run

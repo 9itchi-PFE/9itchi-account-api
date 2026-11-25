@@ -59,3 +59,15 @@ type ListUsersResponse struct {
 	Page     int            `json:"page"`
 	PageSize int            `json:"page_size"`
 }
+
+// SetUserNoteRequest is the validated body of SetNote. An empty note empties it.
+type SetUserNoteRequest struct {
+	Note string `json:"note" binding:"max=8000"`
+}
+
+// UserNoteResponse is the internal note of the team about a user. UpdatedAt is nil when nothing was ever written.
+type UserNoteResponse struct {
+	UserID    string     `json:"user_id"`
+	Note      string     `json:"note"`
+	UpdatedAt *time.Time `json:"updated_at"`
+}
