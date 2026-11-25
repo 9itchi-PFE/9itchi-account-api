@@ -7,6 +7,7 @@ import (
 	"9itchi-account-api/pkg/mailgun"
 	"9itchi-account-api/pkg/notification"
 	"9itchi-account-api/pkg/payments"
+	"9itchi-account-api/pkg/peers"
 	"9itchi-account-api/repositories"
 	"9itchi-account-api/utils"
 
@@ -53,7 +54,16 @@ func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Ser
 	}
 	return &Services{
 		Auth: NewAuthService(config, repos.User, repos.Auth, repos.Store, mailer, googleOAuth, linkedinOAuth, core.NewPublisher(config.RabbitMQURL)),
-		User: NewUserService(repos.User, repos.Auth, repos.Store),
+		// Email first, so that nothing scheduled leaves while the rest goes; payments last, it only stops the renewal.
+		User: NewUserService(repos.User, repos.Auth, repos.Store,
+			peers.NewEraser("email", config.EmailAPIURL, config.InternalAPIKey),
+			peers.NewEraser("resume", config.ResumeAPIURL, config.InternalAPIKey),
+			peers.NewEraser("job", config.JobAPIURL, config.InternalAPIKey),
+			peers.NewEraser("notification", config.NotificationAPIURL, config.InternalAPIKey),
+			peers.NewEraser("chat", config.ChatAPIURL, config.InternalAPIKey),
+			peers.NewEraser("tracker", config.TrackerAPIURL, config.InternalAPIKey),
+			peers.NewEraser("payments", config.PaymentsAPIURL, config.InternalAPIKey),
+		),
 		Note: NewNoteService(repos.Note, repos.User),
 		Clients: &Clients{
 			Notification: notification.New(config.NotificationAPIURL, config.InternalAPIKey),

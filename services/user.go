@@ -6,11 +6,15 @@ import (
 	"net/http"
 	"strings"
 
+	"9itchi-account-api/core"
 	"9itchi-account-api/models"
 	"9itchi-account-api/models/api"
 	"9itchi-account-api/models/db"
 	"9itchi-account-api/models/mapping"
 	"9itchi-account-api/repositories"
+	"9itchi-account-api/utils"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -44,10 +48,12 @@ type userService struct {
 	repo   repositories.UserRepository
 	tokens repositories.AuthRepository
 	tx     repositories.Transactor
+	// erasers are the other services that keep data about a user, in the order they are asked to erase it.
+	erasers []core.UserEraser
 }
 
-func NewUserService(repo repositories.UserRepository, tokens repositories.AuthRepository, tx repositories.Transactor) UserService {
-	return &userService{repo: repo, tokens: tokens, tx: tx}
+func NewUserService(repo repositories.UserRepository, tokens repositories.AuthRepository, tx repositories.Transactor, erasers ...core.UserEraser) UserService {
+	return &userService{repo: repo, tokens: tokens, tx: tx, erasers: erasers}
 }
 
 func notFound() *models.ApiError { return apiError(http.StatusNotFound, "user not found") }
@@ -121,9 +127,26 @@ func (s *userService) UpdateMe(ctx context.Context, userID string, req api.Updat
 	return &res, nil
 }
 
+// delete removes an account and everything 9itchi keeps about its owner. The other services erase their part
+// first (the CV, the applications and the Gmail connection, the saved offers, the notifications, the support
+// conversations, the email tracking; payments keeps the receipts and stops the subscription), and the account
+// goes last: if one of them fails the account stays, nothing is half-promised, and the same request can be sent
+// again, since erasing twice is harmless everywhere.
 func (s *userService) delete(ctx context.Context, id string) (*api.MessageResponse, *models.ApiError) {
 	if !isUUID(id) {
 		return nil, badRequest("invalid user id")
+	}
+	if _, err := s.repo.GetByID(ctx, id); errors.Is(err, repositories.ErrNotFound) {
+		return nil, notFound()
+	} else if err != nil {
+		return nil, internalError("user delete", err)
+	}
+	for _, e := range s.erasers {
+		if err := e.EraseUser(ctx, id); err != nil {
+			// The name of the service and the status only: never whose data it was.
+			utils.Logger.Error("user delete: a service did not erase its part", zap.String("service", e.Name()), zap.Error(err))
+			return nil, apiError(http.StatusBadGateway, "the account could not be deleted yet, try again in a moment")
+		}
 	}
 	err := s.repo.Delete(ctx, id)
 	if errors.Is(err, repositories.ErrNotFound) {

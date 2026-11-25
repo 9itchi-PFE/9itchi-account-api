@@ -212,3 +212,69 @@ func TestSetLanguage(t *testing.T) {
 	require.NotNil(t, apiErr)
 	assert.Equal(t, http.StatusNotFound, apiErr.Code)
 }
+
+// fakeEraser is one of the other services: it records who it was asked to erase.
+type fakeEraser struct {
+	name string
+	log  *[]string
+	err  error
+}
+
+func (f fakeEraser) Name() string { return f.name }
+func (f fakeEraser) EraseUser(_ context.Context, id string) error {
+	*f.log = append(*f.log, f.name+":"+id)
+	return f.err
+}
+
+// The other services erase their part first and in order; the account goes last, and stays if one of them fails.
+func TestDeleteErasesEverywhereFirst(t *testing.T) {
+	var calls []string
+	users, tokens := mocks.NewUserRepo(), mocks.NewAuthRepo()
+	add := func() {
+		users.Add(&db.User{ID: userID, Name: "Ann", Email: "ann@example.com", PasswordHash: "x", Role: db.RoleCandidate, Status: db.StatusActive})
+	}
+	add()
+	email, resume := fakeEraser{name: "email", log: &calls}, fakeEraser{name: "resume", log: &calls}
+	svc := NewUserService(users, tokens, mocks.Transactor{}, email, resume)
+
+	_, apiErr := svc.DeleteMe(context.Background(), userID)
+	require.Nil(t, apiErr)
+	assert.Equal(t, []string{"email:" + userID, "resume:" + userID}, calls)
+	_, apiErr = svc.GetMe(context.Background(), userID)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Code)
+
+	// An account that does not exist asks nothing of the other services.
+	calls = nil
+	_, apiErr = svc.DeleteMe(context.Background(), userID)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Code)
+	assert.Empty(t, calls)
+
+	// One service fails: the ones after it are not asked, the account stays, and the answer names no service.
+	add()
+	failing := fakeEraser{name: "resume", log: &calls, err: assert.AnError}
+	last := fakeEraser{name: "payments", log: &calls}
+	svc = NewUserService(users, tokens, mocks.Transactor{}, email, failing, last)
+	_, apiErr = svc.DeleteMe(context.Background(), userID)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.Code)
+	assert.NotContains(t, apiErr.Error.Error(), "resume")
+	assert.Equal(t, []string{"email:" + userID, "resume:" + userID}, calls)
+	_, apiErr = svc.GetMe(context.Background(), userID)
+	require.Nil(t, apiErr, "the account is still there, so the student can try again")
+
+	// Sent again once the service is back: everything is asked again, and the account goes.
+	calls = nil
+	svc = NewUserService(users, tokens, mocks.Transactor{}, email, resume, last)
+	_, apiErr = svc.DeleteMe(context.Background(), userID)
+	require.Nil(t, apiErr)
+	assert.Len(t, calls, 3)
+
+	// The team deleting a student goes the same way.
+	add()
+	calls = nil
+	_, apiErr = svc.DeleteUser(context.Background(), adminID, userID)
+	require.Nil(t, apiErr)
+	assert.Len(t, calls, 3)
+}
