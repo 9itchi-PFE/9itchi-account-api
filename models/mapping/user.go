@@ -12,6 +12,7 @@ func UserToResponse(u *db.User) api.UserResponse {
 	}
 	res.School, res.Phone, res.City = str(u.School), str(u.Phone), str(u.City)
 	res.Speciality, res.Year, res.LinkedIn, res.GitHub = str(u.Speciality), str(u.Year), str(u.LinkedIn), str(u.GitHub)
+	res.HasPhoto = u.HasPhoto
 	return res
 }
 

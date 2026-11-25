@@ -41,6 +41,9 @@ A publish failure is logged and never fails the signup. A broker that cannot be 
 | GET | `/users/me` | user | GetMe |
 | PUT | `/users/me` | user | UpdateMe (name, and the optional profile: `school`, `phone`, `city`, `speciality`, `year`, `linkedin`, `github`) |
 | PUT | `/users/me/language` | user | SetLanguage (`fr`, `en` or `ar`: the language 9itchi writes to the user in; also accepted at signup, `fr` by default) |
+| PUT | `/users/me/photo` | user | UploadPhoto (multipart `file`, JPEG or PNG, 5 MB max: stored as a centred square JPEG of 400 px at most; answers `{"has_photo": true}`) |
+| GET | `/users/me/photo` | user | GetPhoto (JPEG; 404 when none) |
+| DELETE | `/users/me/photo` | user | DeletePhoto (answers `{"has_photo": false}`) |
 | DELETE | `/users/me` | user | DeleteMe |
 | GET | `/admin/users` | admin | ListUsers |
 | GET | `/admin/users/:id` | admin | GetUser |
@@ -74,3 +77,7 @@ go run main.go
 | payments | `PAYMENTS_API_URL` | nothing is deleted: receipts stay as accounting records; the subscription is stopped |
 
 Only `204` counts as erased. If a service fails or does not have the route yet, the answer is `502`, the account stays and the same request can be sent again (erasing twice is harmless everywhere). The log names the service that failed, never the user. statistics-api keeps totals only, and ai-api keeps nothing.
+
+## Profile photo
+
+One photo per user, in `users.photo` (migration `0007`): the service cuts the largest centred square, reduces it to 400 px at most, paints transparency on white and stores a JPEG (under 1 MB, usually far less). The user view says `has_photo`; the photo itself is read only by `GET /users/me/photo`, never by list queries. It goes with the account when it is deleted. Images over 40 megapixels are refused before being decoded.

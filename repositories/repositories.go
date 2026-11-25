@@ -12,6 +12,7 @@ type Repositories struct {
 	Auth  AuthRepository
 	User  UserRepository
 	Note  NoteRepository
+	Photo PhotoRepository
 }
 
 // InitRepositories connects to PostgreSQL, applies migrations and builds the repositories.
@@ -27,6 +28,7 @@ func InitRepositories(ctx context.Context, config utils.AppConfig) (*Repositorie
 		Store: store,
 		Auth:  NewAuthRepository(store),
 		User:  NewUserRepository(store),
+		Photo: NewPhotoRepository(store),
 		Note:  NewNoteRepository(store),
 	}, nil
 }

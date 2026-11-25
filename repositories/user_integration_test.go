@@ -90,6 +90,33 @@ func TestUserCRUD(t *testing.T) {
 	_, err = repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{Year: &unknown})
 	assert.Error(t, err, "the table refuses a year it does not know")
 
+	// The photo: kept apart, the user view only says there is one; list queries never read it.
+	photos := NewPhotoRepository(store)
+	_, err = photos.Get(ctx, u.ID)
+	assert.ErrorIs(t, err, ErrNotFound)
+	require.NoError(t, photos.Set(ctx, u.ID, []byte{0xFF, 0xD8, 0xFF, 1, 2, 3}))
+	withPhoto, err := repo.GetByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.True(t, withPhoto.HasPhoto)
+	data, err := photos.Get(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0xFF, 0xD8, 0xFF, 1, 2, 3}, data)
+	listed, _, err := repo.List(ctx, UserFilter{Limit: 50})
+	require.NoError(t, err)
+	found := false
+	for _, l := range listed {
+		if l.ID == u.ID {
+			found = true
+			assert.True(t, l.HasPhoto)
+		}
+	}
+	assert.True(t, found)
+	require.NoError(t, photos.Delete(ctx, u.ID))
+	noPhoto, err := repo.GetByID(ctx, u.ID)
+	require.NoError(t, err)
+	assert.False(t, noPhoto.HasPhoto)
+	assert.ErrorIs(t, photos.Set(ctx, "00000000-0000-4000-8000-000000000000", []byte{1}), ErrNotFound)
+
 	named, err := repo.UpdateName(ctx, u.ID, "Renamed")
 	require.NoError(t, err)
 	assert.Equal(t, "Renamed", named.Name)

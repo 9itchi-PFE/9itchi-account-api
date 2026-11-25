@@ -16,6 +16,7 @@ type UserResponse struct {
 	Year       string    `json:"year,omitempty"`
 	LinkedIn   string    `json:"linkedin,omitempty"`
 	GitHub     string    `json:"github,omitempty"`
+	HasPhoto   bool      `json:"has_photo"`
 	Language   string    `json:"language"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`

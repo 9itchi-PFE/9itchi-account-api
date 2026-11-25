@@ -9,7 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const userColumns = `id, name, email, password_hash, role, status, school, phone, city, speciality, year, linkedin, github, language, created_at, updated_at`
+// has_photo says whether there is a photo; the photo itself is never read here.
+const userColumns = `id, name, email, password_hash, role, status, school, phone, city, speciality, year, linkedin, github, (photo IS NOT NULL) AS has_photo, language, created_at, updated_at`
 
 // ProfilePatch holds the optional fields of the profile; nil means unchanged, "" clears the field.
 type ProfilePatch struct {

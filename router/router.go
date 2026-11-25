@@ -43,6 +43,9 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		userGroup.GET("/users/me", handlers.GetMe(services.User))
 		userGroup.PUT("/users/me", handlers.UpdateMe(services.User))
 		userGroup.PUT("/users/me/language", handlers.SetLanguage(services.User))
+		userGroup.PUT("/users/me/photo", handlers.UploadPhoto(services.Photo))
+		userGroup.GET("/users/me/photo", handlers.GetPhoto(services.Photo))
+		userGroup.DELETE("/users/me/photo", handlers.DeletePhoto(services.Photo))
 		userGroup.DELETE("/users/me", handlers.DeleteMe(services.User))
 	}
 
