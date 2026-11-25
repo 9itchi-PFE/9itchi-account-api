@@ -16,6 +16,8 @@ var (
 	githubRe   = regexp.MustCompile(`^/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)/?$`)
 )
 
+var years = map[string]bool{"l3": true, "m1": true, "m2": true, "ing1": true, "ing2": true, "ing3": true, "other": true}
+
 // profilePatch reads the optional fields of the profile from the request: each one trimmed, a phone number without
 // its spaces, a LinkedIn or GitHub page reduced to its canonical address. A field left out stays nil (unchanged);
 // an empty one clears the value.
@@ -23,6 +25,9 @@ func profilePatch(req api.UpdateMeRequest) (repositories.ProfilePatch, *models.A
 	p := repositories.ProfilePatch{
 		School: trimmed(req.School), City: trimmed(req.City), Speciality: trimmed(req.Speciality), Year: trimmed(req.Year),
 		Phone: trimmed(req.Phone), LinkedIn: trimmed(req.LinkedIn), GitHub: trimmed(req.GitHub),
+	}
+	if p.Year != nil && *p.Year != "" && !years[*p.Year] {
+		return p, badRequest("year must be one of l3, m1, m2, ing1, ing2, ing3, other")
 	}
 	if p.Phone != nil && *p.Phone != "" {
 		v := strings.NewReplacer(" ", "", "-", "", ".", "").Replace(*p.Phone)

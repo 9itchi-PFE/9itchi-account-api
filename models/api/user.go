@@ -47,7 +47,7 @@ type UpdateMeRequest struct {
 	Phone      *string `json:"phone" binding:"omitempty,max=30"`
 	City       *string `json:"city" binding:"omitempty,max=80"`
 	Speciality *string `json:"speciality" binding:"omitempty,max=120"`
-	Year       *string `json:"year" binding:"omitempty,oneof=l3 m1 m2 ing1 ing2 ing3 other"`
+	Year       *string `json:"year" binding:"omitempty,max=10"`
 	LinkedIn   *string `json:"linkedin" binding:"omitempty,max=200"`
 	GitHub     *string `json:"github" binding:"omitempty,max=200"`
 }

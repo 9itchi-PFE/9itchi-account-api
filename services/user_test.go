@@ -297,9 +297,13 @@ func TestUpdateMeProfileFields(t *testing.T) {
 	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "Ann", City: p("")})
 	require.Nil(t, apiErr)
 	assert.Empty(t, res.City, "an empty value clears the field")
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "Ann", Year: p("")})
+	require.Nil(t, apiErr, "an empty year is no year, not a wrong one")
+	assert.Empty(t, res.Year)
 	assert.Equal(t, "+21620000000", res.Phone, "what is left out stays")
 
 	for name, req := range map[string]api.UpdateMeRequest{
+		"a year that is not one":       {Name: "Ann", Year: p("phd")},
 		"a phone with letters":         {Name: "Ann", Phone: p("call me")},
 		"a phone too short":            {Name: "Ann", Phone: p("1234")},
 		"another site as LinkedIn":     {Name: "Ann", LinkedIn: p("https://linkedin.com.evil.tn/in/ann")},
