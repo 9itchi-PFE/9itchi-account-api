@@ -22,6 +22,13 @@ type User struct {
 	Role         string  `db:"role" json:"role"`
 	Status       string  `db:"status" json:"status"`
 	School       *string `db:"school" json:"school"`
+	// The rest of the profile, all optional: Year is a short code (l3, m1, m2, ing1, ing2, ing3, other).
+	Phone      *string `db:"phone" json:"phone"`
+	City       *string `db:"city" json:"city"`
+	Speciality *string `db:"speciality" json:"speciality"`
+	Year       *string `db:"year" json:"year"`
+	LinkedIn   *string `db:"linkedin" json:"linkedin"`
+	GitHub     *string `db:"github" json:"github"`
 	// Language is the language 9itchi writes to the user in: fr, en or ar.
 	Language  string    `db:"language" json:"language"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`

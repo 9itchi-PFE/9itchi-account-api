@@ -78,6 +78,11 @@ func TestUpdateMeHandlerValidates(t *testing.T) {
 
 	w = do(UpdateMe(svc), http.MethodPut, "/users/me", `{}`)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	// The form sends every field, empty when the student gave none: that clears them, it is not an error.
+	w = do(UpdateMe(svc), http.MethodPut, "/users/me",
+		`{"name":"Bob","school":"","phone":"","city":"","speciality":"","year":"","linkedin":"","github":""}`)
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestSetLanguageHandlerValidates(t *testing.T) {

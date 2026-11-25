@@ -278,3 +278,51 @@ func TestDeleteErasesEverywhereFirst(t *testing.T) {
 	require.Nil(t, apiErr)
 	assert.Len(t, calls, 3)
 }
+
+func TestUpdateMeProfileFields(t *testing.T) {
+	e := newUserEnv()
+	p := func(s string) *string { return &s }
+	res, apiErr := e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{
+		Name: "Ann", Phone: p(" +216 20 000 000 "), City: p(" Sfax "), Speciality: p("Génie logiciel"), Year: p("ing3"),
+		LinkedIn: p("linkedin.com/in/ann-b/?trk=x"), GitHub: p("https://github.com/ann-b"),
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "+21620000000", res.Phone, "kept without its spaces")
+	assert.Equal(t, "Sfax", res.City)
+	assert.Equal(t, "Génie logiciel", res.Speciality)
+	assert.Equal(t, "ing3", res.Year)
+	assert.Equal(t, "https://www.linkedin.com/in/ann-b", res.LinkedIn, "reduced to the page itself")
+	assert.Equal(t, "https://github.com/ann-b", res.GitHub)
+
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "Ann", City: p("")})
+	require.Nil(t, apiErr)
+	assert.Empty(t, res.City, "an empty value clears the field")
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "Ann", Year: p("")})
+	require.Nil(t, apiErr, "an empty year is no year, not a wrong one")
+	assert.Empty(t, res.Year)
+	assert.Equal(t, "+21620000000", res.Phone, "what is left out stays")
+
+	for name, req := range map[string]api.UpdateMeRequest{
+		"a year that is not one":       {Name: "Ann", Year: p("phd")},
+		"a phone with letters":         {Name: "Ann", Phone: p("call me")},
+		"a phone too short":            {Name: "Ann", Phone: p("1234")},
+		"another site as LinkedIn":     {Name: "Ann", LinkedIn: p("https://linkedin.com.evil.tn/in/ann")},
+		"a LinkedIn page not a person": {Name: "Ann", LinkedIn: p("linkedin.com/company/acme")},
+		"a script as LinkedIn":         {Name: "Ann", LinkedIn: p("javascript://linkedin.com/in/ann")},
+		"http LinkedIn":                {Name: "Ann", LinkedIn: p("http://linkedin.com/in/ann")},
+		"another site as GitHub":       {Name: "Ann", GitHub: p("gitlab.com/ann")},
+		"a repository as GitHub":       {Name: "Ann", GitHub: p("github.com/ann/repo")},
+		"credentials in the address":   {Name: "Ann", GitHub: p("https://x:y@github.com/ann")},
+	} {
+		_, apiErr = e.svc.UpdateMe(context.Background(), userID, req)
+		require.NotNil(t, apiErr, name)
+		assert.Equal(t, http.StatusBadRequest, apiErr.Code, name)
+	}
+	res, apiErr = e.svc.GetMe(context.Background(), userID)
+	require.Nil(t, apiErr)
+	assert.Equal(t, "https://github.com/ann-b", res.GitHub, "a refused request changes nothing")
+
+	res, apiErr = e.svc.UpdateMe(context.Background(), userID, api.UpdateMeRequest{Name: "Ann", LinkedIn: p("https://tn.linkedin.com/in/ann-b")})
+	require.Nil(t, apiErr, "a country address of LinkedIn is LinkedIn")
+	assert.Equal(t, "https://www.linkedin.com/in/ann-b", res.LinkedIn)
+}

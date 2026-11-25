@@ -111,12 +111,11 @@ func (s *userService) UpdateMe(ctx context.Context, userID string, req api.Updat
 	if !isUUID(userID) {
 		return nil, badRequest("invalid user id")
 	}
-	var school *string
-	if req.School != nil {
-		v := strings.TrimSpace(*req.School)
-		school = &v
+	patch, apiErr := profilePatch(req)
+	if apiErr != nil {
+		return nil, apiErr
 	}
-	u, err := s.repo.UpdateProfile(ctx, userID, name, school)
+	u, err := s.repo.UpdateProfile(ctx, userID, name, patch)
 	if errors.Is(err, repositories.ErrNotFound) {
 		return nil, notFound()
 	}

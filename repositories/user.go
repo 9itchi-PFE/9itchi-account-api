@@ -2,13 +2,31 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 
 	"9itchi-account-api/models/db"
 
 	"github.com/jackc/pgx/v5"
 )
 
-const userColumns = `id, name, email, password_hash, role, status, school, language, created_at, updated_at`
+const userColumns = `id, name, email, password_hash, role, status, school, phone, city, speciality, year, linkedin, github, language, created_at, updated_at`
+
+// ProfilePatch holds the optional fields of the profile; nil means unchanged, "" clears the field.
+type ProfilePatch struct {
+	School, Phone, City, Speciality, Year, LinkedIn, GitHub *string
+}
+
+type profileField struct {
+	column string
+	value  *string
+}
+
+func (p ProfilePatch) fields() []profileField {
+	return []profileField{
+		{"school", p.School}, {"phone", p.Phone}, {"city", p.City}, {"speciality", p.Speciality},
+		{"year", p.Year}, {"linkedin", p.LinkedIn}, {"github", p.GitHub},
+	}
+}
 
 // UserFilter selects users for the admin list. Empty strings mean "no filter".
 type UserFilter struct {
@@ -25,8 +43,8 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*db.User, error)
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
 	UpdateName(ctx context.Context, id, name string) (*db.User, error)
-	// UpdateProfile sets the name and, when school is not nil, the school ("" clears it).
-	UpdateProfile(ctx context.Context, id, name string, school *string) (*db.User, error)
+	// UpdateProfile sets the name and each field of the patch that is not nil ("" clears it).
+	UpdateProfile(ctx context.Context, id, name string, patch ProfilePatch) (*db.User, error)
 	// UpdateLanguage sets the language 9itchi writes to the user in.
 	UpdateLanguage(ctx context.Context, id, language string) (*db.User, error)
 	UpdateStatus(ctx context.Context, id, status string) (*db.User, error)
@@ -73,13 +91,18 @@ func (r *userRepository) UpdateName(ctx context.Context, id, name string) (*db.U
 	return r.one(ctx, `UPDATE users SET name = $2, updated_at = now() WHERE id = $1 RETURNING `+userColumns, id, name)
 }
 
-func (r *userRepository) UpdateProfile(ctx context.Context, id, name string, school *string) (*db.User, error) {
-	set, value := school != nil, ""
-	if school != nil {
-		value = *school
+func (r *userRepository) UpdateProfile(ctx context.Context, id, name string, patch ProfilePatch) (*db.User, error) {
+	args := []any{id, name}
+	set := "name = $2"
+	for _, f := range patch.fields() {
+		if f.value == nil {
+			continue
+		}
+		args = append(args, *f.value)
+		// The column names come from fields(), never from the request.
+		set += fmt.Sprintf(", %s = NULLIF($%d, '')", f.column, len(args))
 	}
-	return r.one(ctx, `UPDATE users SET name = $2, school = CASE WHEN $3 THEN NULLIF($4, '') ELSE school END, updated_at = now()
-		WHERE id = $1 RETURNING `+userColumns, id, name, set, value)
+	return r.one(ctx, `UPDATE users SET `+set+`, updated_at = now() WHERE id = $1 RETURNING `+userColumns, args...)
 }
 
 func (r *userRepository) UpdateLanguage(ctx context.Context, id, language string) (*db.User, error) {
