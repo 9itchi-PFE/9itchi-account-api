@@ -29,6 +29,8 @@ type User struct {
 	Year       *string `db:"year" json:"year"`
 	LinkedIn   *string `db:"linkedin" json:"linkedin"`
 	GitHub     *string `db:"github" json:"github"`
+	// HasPhoto says whether the user has a profile photo (the photo is read on its own).
+	HasPhoto bool `db:"has_photo" json:"has_photo"`
 	// Language is the language 9itchi writes to the user in: fr, en or ar.
 	Language  string    `db:"language" json:"language"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
