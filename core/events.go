@@ -25,3 +25,10 @@ func (LogPublisher) Publish(_ context.Context, event string, _ any) error {
 	utils.Logger.Info("event", zap.String("name", event))
 	return nil
 }
+
+// UserEraser is one service that keeps data about users and erases its part when an account is deleted.
+type UserEraser interface {
+	// Name is the service, for logs and for the answer when it fails.
+	Name() string
+	EraseUser(ctx context.Context, userID string) error
+}

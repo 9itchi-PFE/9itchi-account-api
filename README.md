@@ -57,3 +57,19 @@ cp .env.example .env
 go run main.go
 ```
 - Users carry an optional `school` (a short code such as `ENIS`, at most 120 characters): set at sign-up, changed with `PUT /users/me` (`"school": ""` clears it, no key keeps it), returned in the user view. Migration `0003`.
+
+## Deleting an account
+
+`DELETE /users/me` (the student) and `DELETE /admin/users/:id` (the team) delete the account **and what the other services keep about its owner**. Before the account row goes, account-api calls `DELETE /internal/users/:id` (`x-api-key`) on each of them, in this order:
+
+| Service | Env | What goes |
+|---|---|---|
+| email | `EMAIL_API_URL` | applications, emails (scheduled ones never leave), the Gmail connection |
+| resume | `RESUME_API_URL` | CVs, versions, files, photo, downloads |
+| job | `JOB_API_URL` | saved offers, what the student is looking for |
+| notification | `NOTIFICATION_API_URL` | notifications, alert settings |
+| chat | `CHAT_API_URL` | support conversations |
+| tracker | `TRACKER_API_URL` | email tracking |
+| payments | `PAYMENTS_API_URL` | nothing is deleted: receipts stay as accounting records; the subscription is stopped |
+
+Only `204` counts as erased. If a service fails or does not have the route yet, the answer is `502`, the account stays and the same request can be sent again (erasing twice is harmless everywhere). The log names the service that failed, never the user. statistics-api keeps totals only, and ai-api keeps nothing.

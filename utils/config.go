@@ -22,6 +22,12 @@ type AppConfig struct {
 	// Peer service base URLs.
 	NotificationAPIURL string
 	PaymentsAPIURL     string
+	// The other services that keep data about a user: each erases its part when an account is deleted.
+	ResumeAPIURL  string
+	EmailAPIURL   string
+	JobAPIURL     string
+	ChatAPIURL    string
+	TrackerAPIURL string
 	// RabbitMQURL is the event broker. Empty: events are only logged.
 	RabbitMQURL string
 	// AdminEmail/AdminPassword optionally bootstrap the first admin at startup (env ADMIN_EMAIL, ADMIN_PASSWORD). Never log them.
@@ -59,6 +65,11 @@ func LoadConfig() AppConfig {
 		InternalAPIKeyRequired: getBoolWithDefault("INTERNAL_API_KEY_REQUIRED", true),
 		NotificationAPIURL:     getStringWithDefault("NOTIFICATION_API_URL", "http://9itchi-notification-api:8087"),
 		PaymentsAPIURL:         getStringWithDefault("PAYMENTS_API_URL", "http://9itchi-payments-api:8089"),
+		ResumeAPIURL:           getStringWithDefault("RESUME_API_URL", "http://9itchi-resume-api:8082"),
+		EmailAPIURL:            getStringWithDefault("EMAIL_API_URL", "http://9itchi-email-api:8085"),
+		JobAPIURL:              getStringWithDefault("JOB_API_URL", "http://9itchi-job-api:8084"),
+		ChatAPIURL:             getStringWithDefault("CHAT_API_URL", "http://9itchi-chat-api:8088"),
+		TrackerAPIURL:          getStringWithDefault("TRACKER_API_URL", "http://9itchi-tracker-api:8086"),
 		RabbitMQURL:            getStringWithDefault("RABBITMQ_URL", ""),
 		AdminEmail:             getStringWithDefault("ADMIN_EMAIL", ""),
 		AdminPassword:          getStringWithDefault("ADMIN_PASSWORD", ""),
