@@ -4,15 +4,21 @@ import "time"
 
 // UserResponse is the public view of a user (never the password hash).
 type UserResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	Status    string    `json:"status"`
-	School    string    `json:"school,omitempty"`
-	Language  string    `json:"language"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Email      string    `json:"email"`
+	Role       string    `json:"role"`
+	Status     string    `json:"status"`
+	School     string    `json:"school,omitempty"`
+	Phone      string    `json:"phone,omitempty"`
+	City       string    `json:"city,omitempty"`
+	Speciality string    `json:"speciality,omitempty"`
+	Year       string    `json:"year,omitempty"`
+	LinkedIn   string    `json:"linkedin,omitempty"`
+	GitHub     string    `json:"github,omitempty"`
+	Language   string    `json:"language"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // InternalUserResponse is the minimal user view served to peer services.
@@ -36,6 +42,14 @@ type UpdateMeRequest struct {
 	Name string `json:"name" binding:"required,max=100"`
 	// School, when present, replaces the school; "" clears it.
 	School *string `json:"school" binding:"omitempty,max=120"`
+	// The rest of the profile works the same way: a key that is present replaces the value, "" clears it, no key
+	// keeps it. Year is a short code; LinkedIn and GitHub are the address of the student's page.
+	Phone      *string `json:"phone" binding:"omitempty,max=30"`
+	City       *string `json:"city" binding:"omitempty,max=80"`
+	Speciality *string `json:"speciality" binding:"omitempty,max=120"`
+	Year       *string `json:"year" binding:"omitempty,oneof=l3 m1 m2 ing1 ing2 ing3 other"`
+	LinkedIn   *string `json:"linkedin" binding:"omitempty,max=200"`
+	GitHub     *string `json:"github" binding:"omitempty,max=200"`
 }
 
 // SuspendUserRequest is the validated body of SuspendUser.

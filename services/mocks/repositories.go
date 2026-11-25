@@ -78,7 +78,7 @@ func (m *UserRepo) GetByEmail(_ context.Context, email string) (*db.User, error)
 	return m.find(func(x *db.User) bool { return x.Email == email })
 }
 
-func (m *UserRepo) UpdateProfile(_ context.Context, id, name string, school *string) (*db.User, error) {
+func (m *UserRepo) UpdateProfile(_ context.Context, id, name string, patch repositories.ProfilePatch) (*db.User, error) {
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -87,14 +87,23 @@ func (m *UserRepo) UpdateProfile(_ context.Context, id, name string, school *str
 		return nil, repositories.ErrNotFound
 	}
 	u.Name = name
-	if school != nil {
-		if *school == "" {
-			u.School = nil
-		} else {
-			s := *school
-			u.School = &s
+	set := func(to **string, v *string) {
+		switch {
+		case v == nil:
+		case *v == "":
+			*to = nil
+		default:
+			s := *v
+			*to = &s
 		}
 	}
+	set(&u.School, patch.School)
+	set(&u.Phone, patch.Phone)
+	set(&u.City, patch.City)
+	set(&u.Speciality, patch.Speciality)
+	set(&u.Year, patch.Year)
+	set(&u.LinkedIn, patch.LinkedIn)
+	set(&u.GitHub, patch.GitHub)
 	c := *u
 	return &c, nil
 }

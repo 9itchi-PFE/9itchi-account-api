@@ -39,7 +39,7 @@ A publish failure is logged and never fails the signup. A broker that cannot be 
 | GET | `/auth/linkedin` | public | LinkedInSignIn (302 to LinkedIn, OpenID Connect; 503 when unconfigured) |
 | GET | `/auth/linkedin/callback` | public | LinkedInCallback (same redirects as Google, failures to `...?error=linkedin_failed`) |
 | GET | `/users/me` | user | GetMe |
-| PUT | `/users/me` | user | UpdateMe |
+| PUT | `/users/me` | user | UpdateMe (name, and the optional profile: `school`, `phone`, `city`, `speciality`, `year`, `linkedin`, `github`) |
 | PUT | `/users/me/language` | user | SetLanguage (`fr`, `en` or `ar`: the language 9itchi writes to the user in; also accepted at signup, `fr` by default) |
 | DELETE | `/users/me` | user | DeleteMe |
 | GET | `/admin/users` | admin | ListUsers |
@@ -57,6 +57,7 @@ cp .env.example .env
 go run main.go
 ```
 - Users carry an optional `school` (a short code such as `ENIS`, at most 120 characters): set at sign-up, changed with `PUT /users/me` (`"school": ""` clears it, no key keeps it), returned in the user view. Migration `0003`.
+- The rest of the profile is optional too and works like `school` (`""` clears, no key keeps): `phone` (8 to 15 digits, optional `+`, stored without spaces), `city`, `speciality`, `year` (`l3`, `m1`, `m2`, `ing1`, `ing2`, `ing3`, `other`), `linkedin` and `github` (the address of the student's own page, with or without `https://`, stored as `https://www.linkedin.com/in/<name>` and `https://github.com/<name>`; any other site or path is a 400). Migration `0006`. Never logged.
 
 ## Deleting an account
 

@@ -62,17 +62,33 @@ func TestUserCRUD(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 
 	enis := "ENIS"
-	withSchool, err := repo.UpdateProfile(ctx, u.ID, "Ann", &enis)
+	withSchool, err := repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{School: &enis})
 	require.NoError(t, err)
 	require.NotNil(t, withSchool.School)
 	assert.Equal(t, "ENIS", *withSchool.School)
-	kept, err := repo.UpdateProfile(ctx, u.ID, "Ann", nil)
+	kept, err := repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{})
 	require.NoError(t, err)
 	require.NotNil(t, kept.School, "nil keeps the school")
 	empty := ""
-	cleared, err := repo.UpdateProfile(ctx, u.ID, "Ann", &empty)
+	cleared, err := repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{School: &empty})
 	require.NoError(t, err)
 	assert.Nil(t, cleared.School)
+
+	// The rest of the profile: each field set on its own, kept when left out, cleared by "".
+	phone, city, spec, year := "+21620000000", "Sfax", "Génie logiciel", "ing3"
+	li, gh := "https://www.linkedin.com/in/ann", "https://github.com/ann"
+	full, err := repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{Phone: &phone, City: &city, Speciality: &spec, Year: &year, LinkedIn: &li, GitHub: &gh})
+	require.NoError(t, err)
+	require.NotNil(t, full.GitHub)
+	assert.Equal(t, []string{phone, city, spec, year, li, gh}, []string{*full.Phone, *full.City, *full.Speciality, *full.Year, *full.LinkedIn, *full.GitHub})
+	part, err := repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{City: &empty})
+	require.NoError(t, err)
+	assert.Nil(t, part.City)
+	require.NotNil(t, part.Phone, "what is left out stays")
+	assert.Equal(t, phone, *part.Phone)
+	unknown := "phd"
+	_, err = repo.UpdateProfile(ctx, u.ID, "Ann", ProfilePatch{Year: &unknown})
+	assert.Error(t, err, "the table refuses a year it does not know")
 
 	named, err := repo.UpdateName(ctx, u.ID, "Renamed")
 	require.NoError(t, err)
