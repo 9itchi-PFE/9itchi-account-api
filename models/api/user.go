@@ -31,6 +31,8 @@ type InternalUserResponse struct {
 	Status string `json:"status"`
 	// Language is the language to write to the user in (fr, en or ar).
 	Language string `json:"language"`
+	// EmailVerified says whether a Google or LinkedIn sign-in vouched for the email (payments-api free grants).
+	EmailVerified bool `json:"email_verified"`
 }
 
 // SetLanguageRequest is the validated body of SetLanguage.

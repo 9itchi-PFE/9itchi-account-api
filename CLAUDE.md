@@ -15,7 +15,7 @@ Auth and identity hub: signup/login, JWT access (15 min) + refresh (7 d, hashed,
 - Public: `POST /auth/signup|login|refresh|forgot-password|reset-password`; `GET /auth/google|linkedin`, `/auth/{google,linkedin}/callback`.
 - User: `POST /auth/logout`; `GET|PUT|DELETE /users/me`; `PUT /users/me/language`; `GET|PUT|DELETE /users/me/photo`.
 - Admin: `GET /admin/users`, `GET|DELETE /admin/users/:id`, `PUT /admin/users/:id/suspend`, `GET|PUT /admin/users/:id/note`.
-- Internal: `GET /internal/users/:id` (notification-api).
+- Internal: `GET /internal/users/:id` (notification-api; payments-api reads `email`, `email_verified` for free grants).
 
 ## Data, peers, events
 - Tables: `users` (`photo` bytea, one square JPEG <= 1 MiB; upload cap 5 MB before resize), `refresh_tokens`, `password_resets`, `user_notes`. `users.email_verified` (`0008`). Latest `0008_users_email_verified.sql`.
