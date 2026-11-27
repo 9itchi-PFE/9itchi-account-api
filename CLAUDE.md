@@ -18,7 +18,7 @@ Auth and identity hub: signup/login, JWT access (15 min) + refresh (7 d, hashed,
 - Internal: `GET /internal/users/:id` (notification-api).
 
 ## Data, peers, events
-- Tables: `users` (`photo` bytea, one square JPEG <= 1 MiB; upload cap 5 MB before resize), `refresh_tokens`, `password_resets`, `user_notes`. Latest `0007_users_photo.sql`.
+- Tables: `users` (`photo` bytea, one square JPEG <= 1 MiB; upload cap 5 MB before resize), `refresh_tokens`, `password_resets`, `user_notes`. `users.email_verified` (`0008`). Latest `0008_users_email_verified.sql`.
 - Eraser (`pkg/peers/eraser.go`): `DELETE /internal/users/:id` on email, resume, job, notification, chat, tracker, payments (in that order, 15 s each), then deletes the account. One failure keeps the account; retryable.
 - Publishes `user.registered` (`{user_id}`). Consumes nothing.
 - Providers: `core.OAuthProvider` Google (`pkg/google`) + LinkedIn OIDC (`pkg/linkedin`), each 503 until its ID/secret are set; `Mailer` Mailgun, else `NoopMailer`.
@@ -27,7 +27,7 @@ Auth and identity hub: signup/login, JWT access (15 min) + refresh (7 d, hashed,
 ## Domain rules
 - Roles `candidate` | `admin`. Language `fr` | `en` | `ar` (default `fr`). Suspended = 403 on login and refresh.
 - Unknown-email login burns a dummy bcrypt compare; forgot-password always answers generically; reset code TTL 15 min.
-- OAuth: failure redirects to frontend with `error=<provider>_failed`; tokens in URL fragment; OAuth users get a password-less account (random hash); verified email required.
+- OAuth: failure redirects to frontend with `error=<provider>_failed`; tokens in URL fragment; OAuth users get a password-less account (random hash); verified email required; sign-in sets `users.email_verified`, carried as JWT claim `email_verified` (payments-api student discount). Password signups stay unverified.
 - Profile: LinkedIn/GitHub URLs reduced to canonical handles (other hosts refused); phone stored without spaces.
 - Subscription data lives only in payments-api (no `users.plan_id`).
 

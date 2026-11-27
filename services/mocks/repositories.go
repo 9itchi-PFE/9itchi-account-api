@@ -147,6 +147,19 @@ func (m *UserRepo) UpdateStatus(_ context.Context, id, status string) (*db.User,
 	return &c, nil
 }
 
+func (m *UserRepo) MarkEmailVerified(_ context.Context, id string) (*db.User, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	u, ok := m.Users[id]
+	if !ok {
+		return nil, repositories.ErrNotFound
+	}
+	u.EmailVerified = true
+	c := *u
+	return &c, nil
+}
+
 func (m *UserRepo) UpdatePassword(_ context.Context, id, hash string) error {
 	if m.Err != nil {
 		return m.Err

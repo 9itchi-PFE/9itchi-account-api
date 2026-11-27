@@ -10,7 +10,7 @@ import (
 )
 
 // has_photo says whether there is a photo; the photo itself is never read here.
-const userColumns = `id, name, email, password_hash, role, status, school, phone, city, speciality, year, linkedin, github, (photo IS NOT NULL) AS has_photo, language, created_at, updated_at`
+const userColumns = `id, name, email, password_hash, role, status, school, phone, city, speciality, year, linkedin, github, (photo IS NOT NULL) AS has_photo, email_verified, language, created_at, updated_at`
 
 // ProfilePatch holds the optional fields of the profile; nil means unchanged, "" clears the field.
 type ProfilePatch struct {
@@ -49,6 +49,8 @@ type UserRepository interface {
 	// UpdateLanguage sets the language 9itchi writes to the user in.
 	UpdateLanguage(ctx context.Context, id, language string) (*db.User, error)
 	UpdateStatus(ctx context.Context, id, status string) (*db.User, error)
+	// MarkEmailVerified records that a sign-in provider vouched for the user's email.
+	MarkEmailVerified(ctx context.Context, id string) (*db.User, error)
 	UpdatePassword(ctx context.Context, id, passwordHash string) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, f UserFilter) ([]db.User, int, error)
@@ -112,6 +114,10 @@ func (r *userRepository) UpdateLanguage(ctx context.Context, id, language string
 
 func (r *userRepository) UpdateStatus(ctx context.Context, id, status string) (*db.User, error) {
 	return r.one(ctx, `UPDATE users SET status = $2, updated_at = now() WHERE id = $1 RETURNING `+userColumns, id, status)
+}
+
+func (r *userRepository) MarkEmailVerified(ctx context.Context, id string) (*db.User, error) {
+	return r.one(ctx, `UPDATE users SET email_verified = true, updated_at = now() WHERE id = $1 RETURNING `+userColumns, id)
 }
 
 func (r *userRepository) UpdatePassword(ctx context.Context, id, passwordHash string) error {
