@@ -31,6 +31,8 @@ type User struct {
 	GitHub     *string `db:"github" json:"github"`
 	// HasPhoto says whether the user has a profile photo (the photo is read on its own).
 	HasPhoto bool `db:"has_photo" json:"has_photo"`
+	// EmailVerified says whether a Google or LinkedIn sign-in vouched for the email (password signups are not checked).
+	EmailVerified bool `db:"email_verified" json:"email_verified"`
 	// Language is the language 9itchi writes to the user in: fr, en or ar.
 	Language  string    `db:"language" json:"language"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`

@@ -104,7 +104,7 @@ func burnPasswordCompare(password string) {
 }
 
 func (s *authService) issueTokens(ctx context.Context, u *db.User) (access, refresh string, err error) {
-	claims := utils.Claims{ID: u.ID, Email: u.Email, Role: u.Role, Type: utils.TokenAccess}
+	claims := utils.Claims{ID: u.ID, Email: u.Email, Role: u.Role, Type: utils.TokenAccess, EmailVerified: u.EmailVerified}
 	if access, err = utils.IssueToken(s.cfg, claims, accessTTL); err != nil {
 		return "", "", err
 	}
@@ -364,6 +364,13 @@ func (s *authService) oauthCallback(ctx context.Context, provider core.OAuthProv
 	}
 	if user.Status == db.StatusSuspended {
 		return failed, nil
+	}
+	if !user.EmailVerified {
+		// The provider vouched for the email: from now on the account counts as owning it.
+		if user, err = s.users.MarkEmailVerified(ctx, user.ID); err != nil {
+			utils.Logger.Error("oauth verify email", zap.String("provider", name), zap.Error(err))
+			return failed, nil
+		}
 	}
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {

@@ -456,6 +456,7 @@ func testOAuthCallback(t *testing.T, provider string, callback func(AuthService,
 		require.NoError(t, err)
 		assert.Equal(t, utils.TokenAccess, access.Type)
 		assert.Equal(t, wantEmail, access.Email)
+		assert.True(t, access.EmailVerified, "the provider vouched for the email")
 		refresh, err := utils.ParseToken(cfg, frag.Get("refresh_token"))
 		require.NoError(t, err)
 		assert.Equal(t, utils.TokenRefresh, refresh.Type)
@@ -475,6 +476,7 @@ func testOAuthCallback(t *testing.T, provider string, callback func(AuthService,
 		assert.Equal(t, db.RoleCandidate, u.Role)
 		assert.Equal(t, db.StatusActive, u.Status)
 		assert.NotEmpty(t, u.PasswordHash)
+		assert.True(t, u.EmailVerified)
 	})
 
 	t.Run("existing user is signed in without changes", func(t *testing.T) {
@@ -486,6 +488,7 @@ func testOAuthCallback(t *testing.T, provider string, callback func(AuthService,
 		assertFragmentTokens(t, e, res, "ann@example.com")
 		assert.Len(t, e.users.Users, 1)
 		assert.Equal(t, "Ann", e.users.Users[existing.ID].Name)
+		assert.True(t, e.users.Users[existing.ID].EmailVerified, "a password account becomes verified")
 	})
 }
 
