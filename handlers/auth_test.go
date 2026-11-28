@@ -19,7 +19,9 @@ import (
 // fakeAuth overrides only the methods a test needs; others panic on the nil embedded interface.
 type fakeAuth struct {
 	services.AuthService
-	signup func(api.SignupRequest) (*api.AuthResponse, *models.ApiError)
+	signup func(api.SignupRequest) (*api.VerificationRequiredResponse, *models.ApiError)
+	verify func(api.VerifyEmailRequest) (*api.AuthResponse, *models.ApiError)
+	resend func(api.ResendVerificationRequest) (*api.MessageResponse, *models.ApiError)
 	logout func(string, api.LogoutRequest) (*api.MessageResponse, *models.ApiError)
 	gstart func() (*api.GoogleStart, *models.ApiError)
 	gcb    func(api.GoogleCallbackRequest) (*api.GoogleRedirect, *models.ApiError)
@@ -35,8 +37,16 @@ func (f fakeAuth) LinkedInCallback(_ context.Context, r api.OAuthCallbackRequest
 	return f.lcb(r)
 }
 
-func (f fakeAuth) Signup(_ context.Context, r api.SignupRequest) (*api.AuthResponse, *models.ApiError) {
+func (f fakeAuth) Signup(_ context.Context, r api.SignupRequest) (*api.VerificationRequiredResponse, *models.ApiError) {
 	return f.signup(r)
+}
+
+func (f fakeAuth) VerifyEmail(_ context.Context, r api.VerifyEmailRequest) (*api.AuthResponse, *models.ApiError) {
+	return f.verify(r)
+}
+
+func (f fakeAuth) ResendVerification(_ context.Context, r api.ResendVerificationRequest) (*api.MessageResponse, *models.ApiError) {
+	return f.resend(r)
 }
 
 func (f fakeAuth) Logout(_ context.Context, id string, r api.LogoutRequest) (*api.MessageResponse, *models.ApiError) {
@@ -65,17 +75,17 @@ func do(h gin.HandlerFunc, method, path, body string, params ...gin.Param) *http
 
 func TestSignupHandler(t *testing.T) {
 	var got api.SignupRequest
-	svc := fakeAuth{signup: func(r api.SignupRequest) (*api.AuthResponse, *models.ApiError) {
+	svc := fakeAuth{signup: func(r api.SignupRequest) (*api.VerificationRequiredResponse, *models.ApiError) {
 		got = r
 		if r.Email == "dup@example.com" {
 			return nil, &models.ApiError{Code: http.StatusConflict, Error: errors.New("email already registered")}
 		}
-		return &api.AuthResponse{AccessToken: "a", RefreshToken: "r"}, nil
+		return &api.VerificationRequiredResponse{Email: r.Email, VerificationRequired: true}, nil
 	}}
 
 	w := do(Signup(svc), http.MethodPost, "/auth/signup", `{"name":"Ann","email":"ann@example.com","password":"Passw0rdX"}`)
 	assert.Equal(t, http.StatusCreated, w.Code)
-	assert.JSONEq(t, `{"user":{"id":"","name":"","email":"","role":"","status":"","language":"","has_photo":false,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},"access_token":"a","refresh_token":"r"}`, w.Body.String())
+	assert.JSONEq(t, `{"email":"ann@example.com","verification_required":true}`, w.Body.String())
 	assert.Equal(t, "ann@example.com", got.Email)
 
 	w = do(Signup(svc), http.MethodPost, "/auth/signup", `{"name":"Ann","email":"dup@example.com","password":"Passw0rdX"}`)
@@ -188,4 +198,32 @@ func TestLinkedInHandlers(t *testing.T) {
 	w = do(LinkedInSignIn(unavailable), http.MethodGet, "/auth/linkedin", "")
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"linkedin sign-in unavailable"`)
+}
+
+func TestVerifyEmailAndResendHandlers(t *testing.T) {
+	svc := fakeAuth{
+		verify: func(r api.VerifyEmailRequest) (*api.AuthResponse, *models.ApiError) {
+			if r.Code != "123456" {
+				return nil, &models.ApiError{Code: http.StatusBadRequest, Error: errors.New("invalid or expired code")}
+			}
+			return &api.AuthResponse{AccessToken: "a", RefreshToken: "r"}, nil
+		},
+		resend: func(api.ResendVerificationRequest) (*api.MessageResponse, *models.ApiError) {
+			return &api.MessageResponse{Message: "sent"}, nil
+		},
+	}
+	w := do(VerifyEmail(svc), http.MethodPost, "/auth/verify-email", `{"email":"ann@example.com","code":"123456"}`)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"access_token":"a"`)
+
+	w = do(VerifyEmail(svc), http.MethodPost, "/auth/verify-email", `{"email":"ann@example.com","code":"654321"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	for _, body := range []string{`{}`, `{"email":"ann@example.com","code":"12345"}`, `{"email":"ann@example.com","code":"abcdef"}`, `{"email":"bad","code":"123456"}`} {
+		assert.Equal(t, http.StatusBadRequest, do(VerifyEmail(svc), http.MethodPost, "/auth/verify-email", body).Code, body)
+	}
+
+	w = do(ResendVerification(svc), http.MethodPost, "/auth/resend-verification", `{"email":"ann@example.com"}`)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusBadRequest, do(ResendVerification(svc), http.MethodPost, "/auth/resend-verification", `{"email":"bad"}`).Code)
 }

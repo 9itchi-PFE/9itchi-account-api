@@ -58,7 +58,7 @@ func (e *authEnv) addUser(t *testing.T, email, status string) *db.User {
 	hash, err := bcrypt.GenerateFromPassword([]byte(goodPassword), bcrypt.MinCost)
 	require.NoError(t, err)
 	return e.users.Add(&db.User{ID: "11111111-1111-4111-8111-111111111111", Name: "Ann", Email: email,
-		PasswordHash: string(hash), Role: db.RoleCandidate, Status: status})
+		PasswordHash: string(hash), Role: db.RoleCandidate, Status: status, EmailVerified: true})
 }
 
 func TestSignup(t *testing.T) {
@@ -93,21 +93,20 @@ func TestSignup(t *testing.T) {
 				return
 			}
 			require.Nil(t, apiErr)
-			assert.Equal(t, "ann@example.com", res.User.Email)
-			assert.Equal(t, "Ann", res.User.Name)
-			assert.Equal(t, strings.TrimSpace(tt.req.School), res.User.School)
-			assert.Equal(t, db.RoleCandidate, res.User.Role)
-			assert.Equal(t, db.StatusActive, res.User.Status)
-
-			access, err := utils.ParseToken(testCfg, res.AccessToken)
+			assert.Equal(t, &api.VerificationRequiredResponse{Email: "ann@example.com", VerificationRequired: true}, res)
+			u, err := e.users.GetByEmail(context.Background(), "ann@example.com")
 			require.NoError(t, err)
-			assert.Equal(t, utils.TokenAccess, access.Type)
-			assert.WithinDuration(t, time.Now().Add(accessTTL), access.ExpiresAt.Time, 5*time.Second)
-			refresh, err := utils.ParseToken(testCfg, res.RefreshToken)
-			require.NoError(t, err)
-			assert.Equal(t, utils.TokenRefresh, refresh.Type)
-			assert.WithinDuration(t, time.Now().Add(refreshTTL), refresh.ExpiresAt.Time, 5*time.Second)
-			assert.Contains(t, e.repo.Tokens, hashToken(res.RefreshToken), "only the hash is stored")
+			assert.Equal(t, "Ann", u.Name)
+			if school := strings.TrimSpace(tt.req.School); school != "" {
+				require.NotNil(t, u.School)
+				assert.Equal(t, school, *u.School)
+			}
+			assert.Equal(t, db.RoleCandidate, u.Role)
+			assert.False(t, u.EmailVerified)
+			assert.Empty(t, e.repo.Tokens, "no session before the email is verified")
+			assert.Equal(t, 1, e.mailer.Verifications)
+			assert.Equal(t, "ann@example.com", e.mailer.VerifyEmail)
+			assert.Regexp(t, `^\d{6}$`, e.mailer.VerifyCode)
 		})
 	}
 }
@@ -503,6 +502,7 @@ func TestBootstrapAdmin(t *testing.T) {
 		u, err := e.users.GetByEmail(ctx, "root@example.com")
 		require.NoError(t, err)
 		assert.Equal(t, db.RoleAdmin, u.Role)
+		assert.True(t, u.EmailVerified, "the platform's own admin needs no code")
 		require.NoError(t, e.svc.BootstrapAdmin(ctx))
 		assert.Len(t, e.users.Users, 1)
 	})
@@ -545,9 +545,14 @@ func (r *recordedEvents) Publish(_ context.Context, name string, payload any) er
 	return r.err
 }
 
-func TestSignupPublishesUserRegistered(t *testing.T) {
+// The account is told to the other services (welcome email) only once its email is verified.
+func TestVerifiedSignupPublishesUserRegistered(t *testing.T) {
 	e := newAuthEnv(testCfg)
-	res, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	_, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	require.Nil(t, apiErr)
+	assert.Empty(t, e.events.names, "nothing before the code")
+
+	res, apiErr := e.svc.VerifyEmail(context.Background(), api.VerifyEmailRequest{Email: "ines@example.com", Code: e.mailer.VerifyCode})
 	require.Nil(t, apiErr)
 	require.Equal(t, []string{core.EventUserRegistered}, e.events.names)
 	assert.Equal(t, map[string]any{"user_id": res.User.ID}, e.events.payloads[0], "the id only: no name, no email")
@@ -557,10 +562,12 @@ func TestSignupPublishesUserRegistered(t *testing.T) {
 	assert.Len(t, e.events.names, 1, "a refused signup registers nobody")
 }
 
-func TestSignupSucceedsWhenTheBrokerIsDown(t *testing.T) {
+func TestVerifySucceedsWhenTheBrokerIsDown(t *testing.T) {
 	e := newAuthEnv(testCfg)
 	e.events.err = errors.New("rabbitmq: broker unreachable")
-	res, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	_, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!"})
+	require.Nil(t, apiErr)
+	res, apiErr := e.svc.VerifyEmail(context.Background(), api.VerifyEmailRequest{Email: "ines@example.com", Code: e.mailer.VerifyCode})
 	require.Nil(t, apiErr)
 	assert.NotEmpty(t, res.AccessToken)
 }
@@ -582,11 +589,14 @@ func TestGoogleFirstSignInPublishesUserRegistered(t *testing.T) {
 
 func TestSignupKeepsTheLanguageOfTheInterface(t *testing.T) {
 	e := newAuthEnv(testCfg)
-	res, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!", Language: "ar"})
+	_, apiErr := e.svc.Signup(context.Background(), api.SignupRequest{Name: "Ines", Email: "ines@example.com", Password: "Str0ng-pass!", Language: "ar"})
 	require.Nil(t, apiErr)
-	assert.Equal(t, "ar", res.User.Language)
+	u, _ := e.users.GetByEmail(context.Background(), "ines@example.com")
+	assert.Equal(t, "ar", u.Language)
+	assert.Equal(t, "ar", e.mailer.Lang, "the code is written in the language of the interface")
 
-	res, apiErr = e.svc.Signup(context.Background(), api.SignupRequest{Name: "Sami", Email: "sami@example.com", Password: "Str0ng-pass!"})
+	_, apiErr = e.svc.Signup(context.Background(), api.SignupRequest{Name: "Sami", Email: "sami@example.com", Password: "Str0ng-pass!"})
 	require.Nil(t, apiErr)
-	assert.Equal(t, "fr", res.User.Language, "French when the client names none")
+	u, _ = e.users.GetByEmail(context.Background(), "sami@example.com")
+	assert.Equal(t, "fr", u.Language, "French when the client names none")
 }

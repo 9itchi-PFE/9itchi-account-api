@@ -29,6 +29,8 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		r.POST("/auth/refresh", handlers.RefreshToken(services.Auth))
 		r.POST("/auth/forgot-password", handlers.ForgotPassword(services.Auth))
 		r.POST("/auth/reset-password", handlers.ResetPassword(services.Auth))
+		r.POST("/auth/verify-email", handlers.VerifyEmail(services.Auth))
+		r.POST("/auth/resend-verification", handlers.ResendVerification(services.Auth))
 		r.GET("/auth/google", handlers.GoogleSignIn(services.Auth))
 		r.GET("/auth/google/callback", handlers.GoogleCallback(services.Auth))
 		r.GET("/auth/linkedin", handlers.LinkedInSignIn(services.Auth))

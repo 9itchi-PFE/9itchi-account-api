@@ -98,6 +98,40 @@ func ForgotPassword(svc services.AuthService) gin.HandlerFunc {
 	}
 }
 
+// VerifyEmail: POST /auth/verify-email (public) check the emailed code and sign the user in.
+func VerifyEmail(svc services.AuthService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req api.VerifyEmailRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			models.FormatError(c, &models.ApiError{Code: http.StatusBadRequest, Error: err})
+			return
+		}
+		result, apiErr := svc.VerifyEmail(c.Request.Context(), req)
+		if apiErr != nil {
+			models.FormatError(c, apiErr)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	}
+}
+
+// ResendVerification: POST /auth/resend-verification (public) email a new code; always a generic answer.
+func ResendVerification(svc services.AuthService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req api.ResendVerificationRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			models.FormatError(c, &models.ApiError{Code: http.StatusBadRequest, Error: err})
+			return
+		}
+		result, apiErr := svc.ResendVerification(c.Request.Context(), req)
+		if apiErr != nil {
+			models.FormatError(c, apiErr)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	}
+}
+
 // ResetPassword: POST /auth/reset-password (public) apply reset code.
 func ResetPassword(svc services.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
