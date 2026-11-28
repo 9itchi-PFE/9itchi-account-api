@@ -11,6 +11,23 @@ type SignupRequest struct {
 	Language string `json:"language" binding:"omitempty,oneof=fr en ar"`
 }
 
+// VerifyEmailRequest is the validated body of VerifyEmail.
+type VerifyEmailRequest struct {
+	Email string `json:"email" binding:"required,email,max=254"`
+	Code  string `json:"code" binding:"required,len=6,numeric"`
+}
+
+// ResendVerificationRequest is the validated body of ResendVerification.
+type ResendVerificationRequest struct {
+	Email string `json:"email" binding:"required,email,max=254"`
+}
+
+// VerificationRequiredResponse is returned by signup: the account exists, a code was emailed, no session yet.
+type VerificationRequiredResponse struct {
+	Email                string `json:"email"`
+	VerificationRequired bool   `json:"verification_required"`
+}
+
 // LoginRequest is the validated body of Login.
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,max=254"`
@@ -39,7 +56,7 @@ type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=8,max=72"`
 }
 
-// AuthResponse is returned by signup and login.
+// AuthResponse is returned by login and verify-email.
 type AuthResponse struct {
 	User         UserResponse `json:"user"`
 	AccessToken  string       `json:"access_token"`

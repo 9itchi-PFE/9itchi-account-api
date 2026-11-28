@@ -72,6 +72,36 @@ func TestPasswordResetLifecycle(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestEmailVerificationLifecycle(t *testing.T) {
+	store := newTestStore(t)
+	users, repo := NewUserRepository(store), NewAuthRepository(store)
+	ctx := context.Background()
+	u, err := users.Create(ctx, newUser("ann@example.com"))
+	require.NoError(t, err)
+
+	_, err = repo.GetLatestEmailVerification(ctx, u.ID)
+	assert.ErrorIs(t, err, ErrNotFound)
+
+	require.NoError(t, repo.CreateEmailVerification(ctx, u.ID, "v1", time.Now().Add(time.Minute)))
+	require.NoError(t, repo.CreateEmailVerification(ctx, u.ID, "v2", time.Now().Add(time.Minute)))
+	v, err := repo.GetLatestEmailVerification(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "v2", v.CodeHash, "a new code replaces the old one")
+	assert.WithinDuration(t, time.Now(), v.CreatedAt, time.Minute)
+
+	n, err := repo.RecordVerificationAttempt(ctx, v.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	_, err = repo.GetLatestPasswordReset(ctx, u.ID)
+	assert.ErrorIs(t, err, ErrNotFound, "verification codes are not reset codes")
+
+	require.NoError(t, repo.MarkEmailVerificationUsed(ctx, v.ID))
+	assert.ErrorIs(t, repo.MarkEmailVerificationUsed(ctx, v.ID), ErrNotFound, "single use")
+	_, err = repo.GetLatestEmailVerification(ctx, u.ID)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
 func TestDeleteUserCascades(t *testing.T) {
 	store := newTestStore(t)
 	users, repo := NewUserRepository(store), NewAuthRepository(store)
@@ -80,9 +110,10 @@ func TestDeleteUserCascades(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, repo.CreateRefreshToken(ctx, u.ID, "h1", time.Now().Add(time.Hour)))
 	require.NoError(t, repo.CreatePasswordReset(ctx, u.ID, "c1", time.Now().Add(time.Hour)))
+	require.NoError(t, repo.CreateEmailVerification(ctx, u.ID, "v1", time.Now().Add(time.Hour)))
 
 	require.NoError(t, users.Delete(ctx, u.ID))
-	for _, table := range []string{"refresh_tokens", "password_resets"} {
+	for _, table := range []string{"refresh_tokens", "password_resets", "email_verifications"} {
 		var n int
 		require.NoError(t, store.Conn(ctx).QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&n))
 		assert.Equal(t, 0, n, table)

@@ -14,7 +14,11 @@ type blockingMailer struct {
 	done    chan error
 }
 
-func (m blockingMailer) SendPasswordResetCode(context.Context, string, string) error {
+func (m blockingMailer) SendVerificationCode(ctx context.Context, email, lang, code string) error {
+	return m.SendPasswordResetCode(ctx, email, lang, code)
+}
+
+func (m blockingMailer) SendPasswordResetCode(context.Context, string, string, string) error {
 	<-m.release
 	err := errors.New("send failed")
 	m.done <- err
@@ -23,7 +27,8 @@ func (m blockingMailer) SendPasswordResetCode(context.Context, string, string) e
 
 type funcMailer func(ctx context.Context) error
 
-func (f funcMailer) SendPasswordResetCode(ctx context.Context, _, _ string) error { return f(ctx) }
+func (f funcMailer) SendPasswordResetCode(ctx context.Context, _, _, _ string) error { return f(ctx) }
+func (f funcMailer) SendVerificationCode(ctx context.Context, _, _, _ string) error  { return f(ctx) }
 
 func TestAsyncMailerSurvivesCancelledRequestAndPanics(t *testing.T) {
 	reported := make(chan error, 1)
@@ -41,7 +46,7 @@ func TestAsyncMailerSurvivesCancelledRequestAndPanics(t *testing.T) {
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	require.NoError(t, mailer.SendPasswordResetCode(cancelled, "a@b.c", "123456"))
+	require.NoError(t, mailer.SendPasswordResetCode(cancelled, "a@b.c", "fr", "123456"))
 	select {
 	case err := <-ctxErr:
 		require.NoError(t, err, "delivery must not inherit the request cancellation")
@@ -49,7 +54,7 @@ func TestAsyncMailerSurvivesCancelledRequestAndPanics(t *testing.T) {
 		t.Fatal("mailer was not called")
 	}
 
-	require.NoError(t, mailer.SendPasswordResetCode(context.Background(), "a@b.c", "123456"))
+	require.NoError(t, mailer.SendPasswordResetCode(context.Background(), "a@b.c", "fr", "123456"))
 	select {
 	case err := <-reported:
 		require.EqualError(t, err, "mailer panicked")
@@ -63,7 +68,7 @@ func TestAsyncMailerReturnsBeforeDeliveryAndReportsErrors(t *testing.T) {
 	reported := make(chan error, 1)
 	mailer := AsyncMailer{Mailer: m, OnError: func(err error) { reported <- err }}
 
-	require.NoError(t, mailer.SendPasswordResetCode(context.Background(), "a@b.c", "123456"))
+	require.NoError(t, mailer.SendPasswordResetCode(context.Background(), "a@b.c", "fr", "123456"))
 	close(m.release)
 
 	select {

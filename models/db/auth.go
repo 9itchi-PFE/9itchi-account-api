@@ -12,8 +12,15 @@ type RefreshToken struct {
 	CreatedAt time.Time  `db:"created_at"`
 }
 
-// PasswordReset maps table password_resets (only the hash of the code is stored).
-type PasswordReset struct {
+// PasswordReset maps table password_resets, EmailVerification table email_verifications: both keep a 6-digit
+// code sent by email, of which only the hash is stored.
+type (
+	PasswordReset     = OneTimeCode
+	EmailVerification = OneTimeCode
+)
+
+// OneTimeCode is one code sent by email.
+type OneTimeCode struct {
 	ID        string     `db:"id"`
 	UserID    string     `db:"user_id"`
 	CodeHash  string     `db:"code_hash"`

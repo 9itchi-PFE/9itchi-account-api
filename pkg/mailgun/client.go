@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"strings"
 	"time"
 
@@ -21,7 +20,6 @@ const (
 	retryDelayBase = 500 * time.Millisecond
 	attemptTimeout = 5 * time.Second
 	callTimeout    = 15 * time.Second
-	resetSubject   = "Your 9itchi password reset code"
 )
 
 // Config is the Mailgun setup. APIBase is empty for the US region ("https://api.eu.mailgun.net" for EU).
@@ -46,7 +44,7 @@ type Client struct {
 	retryIn func(attempt int) time.Duration
 }
 
-// New builds a Client. resetTTL is the lifetime of the reset code, shown in the message.
+// New builds a Client. resetTTL is the lifetime of the codes (reset and verification), shown in the message.
 func New(cfg Config, resetTTL time.Duration) *Client {
 	mg := sdk.NewMailgun(cfg.Domain, cfg.APIKey)
 	if cfg.APIBase != "" {
@@ -78,14 +76,24 @@ func normalizeBase(base string) string {
 	return base
 }
 
-// SendPasswordResetCode sends the code; errors never contain the code, the address or the API key.
-func (c *Client) SendPasswordResetCode(ctx context.Context, email, code string) error {
+// SendPasswordResetCode sends the reset code; errors never contain the code, the address or the API key.
+func (c *Client) SendPasswordResetCode(ctx context.Context, email, lang, code string) error {
+	return c.sendCode(ctx, kindReset, email, lang, code)
+}
+
+// SendVerificationCode sends the code that confirms a new account's email.
+func (c *Client) SendVerificationCode(ctx context.Context, email, lang, code string) error {
+	return c.sendCode(ctx, kindVerify, email, lang, code)
+}
+
+func (c *Client) sendCode(ctx context.Context, kind, email, lang, code string) error {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 
-	minutes := int(c.ttl.Minutes())
-	text := fmt.Sprintf("Your 9itchi password reset code is: %s\n\nIt expires in %d minutes.\n\nIf you did not request this, you can ignore this email.\n", code, minutes)
-	htmlBody := fmt.Sprintf("<p>Your 9itchi password reset code is:</p><p><strong style=\"font-size:24px;letter-spacing:4px\">%s</strong></p><p>It expires in %d minutes.</p><p>If you did not request this, you can ignore this email.</p>", html.EscapeString(code), minutes)
+	subject, text, htmlBody, ok := renderCode(kind, lang, code, int(c.ttl.Minutes()))
+	if !ok {
+		return fmt.Errorf("unknown email kind %q", kind)
+	}
 
 	class := ""
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -93,7 +101,7 @@ func (c *Client) SendPasswordResetCode(ctx context.Context, email, code string) 
 			return fmt.Errorf("mailgun rate limiter: %w", ctxCause(ctx, err))
 		}
 		attemptCtx, attemptCancel := context.WithTimeout(ctx, attemptTimeout)
-		err := c.sender.Send(attemptCtx, c.from, email, resetSubject, text, htmlBody)
+		err := c.sender.Send(attemptCtx, c.from, email, subject, text, htmlBody)
 		attemptCancel()
 		if err == nil {
 			return nil

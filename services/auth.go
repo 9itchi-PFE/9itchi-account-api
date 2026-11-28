@@ -32,6 +32,10 @@ const (
 	refreshTTL             = 7 * 24 * time.Hour
 	resetCodeTTL           = 15 * time.Minute
 	maxResetAttempts       = 5
+	verifyCodeTTL          = 15 * time.Minute
+	maxVerifyAttempts      = 5
+	verifyResendCooldown   = time.Minute
+	errNotVerified         = "email not verified"
 	errInvalidCreds        = "invalid credentials"
 	errInvalidRefresh      = "invalid refresh token"
 	errInvalidResetMsg     = "invalid or expired code"
@@ -41,8 +45,12 @@ const (
 
 // AuthService holds all business logic for auth. Handlers stay thin.
 type AuthService interface {
-	// POST /auth/signup: create candidate account
-	Signup(ctx context.Context, req api.SignupRequest) (*api.AuthResponse, *models.ApiError)
+	// POST /auth/signup: create a candidate account and email it a verification code (no session until verified)
+	Signup(ctx context.Context, req api.SignupRequest) (*api.VerificationRequiredResponse, *models.ApiError)
+	// POST /auth/verify-email: check the code, mark the email verified and sign the user in
+	VerifyEmail(ctx context.Context, req api.VerifyEmailRequest) (*api.AuthResponse, *models.ApiError)
+	// POST /auth/resend-verification: send a new code (always a generic answer)
+	ResendVerification(ctx context.Context, req api.ResendVerificationRequest) (*api.MessageResponse, *models.ApiError)
 	// POST /auth/login: email + password login, returns access and refresh tokens
 	Login(ctx context.Context, req api.LoginRequest) (*api.AuthResponse, *models.ApiError)
 	// POST /auth/refresh: rotate the refresh token and issue a new access token
@@ -118,7 +126,40 @@ func (s *authService) issueTokens(ctx context.Context, u *db.User) (access, refr
 	return access, refresh, nil
 }
 
-func (s *authService) Signup(ctx context.Context, req api.SignupRequest) (*api.AuthResponse, *models.ApiError) {
+// needsVerification is true for an account that has not proved it owns its email: a password signup before its code.
+// Admins are created by the platform and never need it.
+func needsVerification(u *db.User) bool { return !u.EmailVerified && u.Role != db.RoleAdmin }
+
+// sendVerification emails a new code to an unverified user, unless one was sent less than a minute ago (a user
+// clicking twice, or a login loop, must not flood the mailbox). Failures are logged only.
+func (s *authService) sendVerification(ctx context.Context, user *db.User) {
+	if last, err := s.repo.GetLatestEmailVerification(ctx, user.ID); err == nil && time.Since(last.CreatedAt) < verifyResendCooldown {
+		return
+	}
+	code, err := newCode()
+	if err != nil {
+		utils.Logger.Error("verify code", zap.Error(err))
+		return
+	}
+	if err := s.repo.CreateEmailVerification(ctx, user.ID, hashCode(s.cfg.SecretKey, user.ID, code), time.Now().Add(verifyCodeTTL)); err != nil {
+		utils.Logger.Error("verify store", zap.Error(err))
+		return
+	}
+	if err := s.mailer.SendVerificationCode(ctx, user.Email, user.Language, code); err != nil {
+		utils.Logger.Error("verify mail", zap.Error(err))
+	}
+}
+
+// newCode draws a 6-digit code.
+func newCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
+}
+
+func (s *authService) Signup(ctx context.Context, req api.SignupRequest) (*api.VerificationRequiredResponse, *models.ApiError) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, badRequest("name is required")
@@ -144,10 +185,79 @@ func (s *authService) Signup(ctx context.Context, req api.SignupRequest) (*api.A
 	if err != nil {
 		return nil, internalError("signup create", err)
 	}
+	// The account exists for the other services only once its email is verified (VerifyEmail publishes it).
+	s.sendVerification(ctx, user)
+	return &api.VerificationRequiredResponse{Email: user.Email, VerificationRequired: true}, nil
+}
+
+const resendMessage = "if the account needs it, a new code has been sent"
+
+func (s *authService) ResendVerification(ctx context.Context, req api.ResendVerificationRequest) (*api.MessageResponse, *models.ApiError) {
+	generic := &api.MessageResponse{Message: resendMessage}
+	user, err := s.users.GetByEmail(ctx, normalizeEmail(req.Email))
+	if err != nil {
+		if !errors.Is(err, repositories.ErrNotFound) {
+			utils.Logger.Error("resend lookup", zap.Error(err))
+		}
+		return generic, nil
+	}
+	if user.Status == db.StatusActive && needsVerification(user) {
+		s.sendVerification(ctx, user)
+	}
+	return generic, nil
+}
+
+func (s *authService) VerifyEmail(ctx context.Context, req api.VerifyEmailRequest) (*api.AuthResponse, *models.ApiError) {
+	invalid := badRequest(errInvalidResetMsg)
+	user, err := s.users.GetByEmail(ctx, normalizeEmail(req.Email))
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil, invalid
+	}
+	if err != nil {
+		return nil, internalError("verify lookup", err)
+	}
+	if user.Status == db.StatusSuspended {
+		return nil, apiError(http.StatusForbidden, "account suspended")
+	}
+	if !needsVerification(user) {
+		return nil, invalid
+	}
+	v, err := s.repo.GetLatestEmailVerification(ctx, user.ID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil, invalid
+	}
+	if err != nil {
+		return nil, internalError("verify load", err)
+	}
+	if v.Attempts >= maxVerifyAttempts || !time.Now().Before(v.ExpiresAt) {
+		return nil, invalid
+	}
+	if subtle.ConstantTimeCompare([]byte(v.CodeHash), []byte(hashCode(s.cfg.SecretKey, user.ID, req.Code))) != 1 {
+		if _, err := s.repo.RecordVerificationAttempt(ctx, v.ID); err != nil {
+			return nil, internalError("verify attempt", err)
+		}
+		return nil, invalid
+	}
+	err = s.tx.WithTx(ctx, func(ctx context.Context) error {
+		if err := s.repo.MarkEmailVerificationUsed(ctx, v.ID); err != nil {
+			return err
+		}
+		verified, err := s.users.MarkEmailVerified(ctx, user.ID)
+		if err == nil {
+			user = verified
+		}
+		return err
+	})
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil, invalid
+	}
+	if err != nil {
+		return nil, internalError("verify apply", err)
+	}
 	s.registered(ctx, user)
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
-		return nil, internalError("signup tokens", err)
+		return nil, internalError("verify tokens", err)
 	}
 	return &api.AuthResponse{User: mapping.UserToResponse(user), AccessToken: access, RefreshToken: refresh}, nil
 }
@@ -166,6 +276,11 @@ func (s *authService) Login(ctx context.Context, req api.LoginRequest) (*api.Aut
 	}
 	if user.Status == db.StatusSuspended {
 		return nil, apiError(http.StatusForbidden, "account suspended")
+	}
+	if needsVerification(user) {
+		// The password is right: send a fresh code so the screen that follows can be used at once.
+		s.sendVerification(ctx, user)
+		return nil, apiError(http.StatusForbidden, errNotVerified)
 	}
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
@@ -198,6 +313,10 @@ func (s *authService) RefreshToken(ctx context.Context, req api.RefreshTokenRequ
 	}
 	if user.Status == db.StatusSuspended {
 		return nil, apiError(http.StatusForbidden, "account suspended")
+	}
+	if needsVerification(user) {
+		// A session opened before verification was required ends here.
+		return nil, apiError(http.StatusForbidden, errNotVerified)
 	}
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
@@ -238,17 +357,16 @@ func (s *authService) ForgotPassword(ctx context.Context, req api.ForgotPassword
 	if user.Status != db.StatusActive {
 		return generic, nil
 	}
-	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	code, err := newCode()
 	if err != nil {
 		utils.Logger.Error("forgot code", zap.Error(err))
 		return generic, nil
 	}
-	code := fmt.Sprintf("%06d", n.Int64())
 	if err := s.repo.CreatePasswordReset(ctx, user.ID, hashCode(s.cfg.SecretKey, user.ID, code), time.Now().Add(resetCodeTTL)); err != nil {
 		utils.Logger.Error("forgot store", zap.Error(err))
 		return generic, nil
 	}
-	if err := s.mailer.SendPasswordResetCode(ctx, user.Email, code); err != nil {
+	if err := s.mailer.SendPasswordResetCode(ctx, user.Email, user.Language, code); err != nil {
 		utils.Logger.Error("forgot mail", zap.Error(err))
 	}
 	return generic, nil
@@ -427,9 +545,13 @@ func (s *authService) BootstrapAdmin(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.users.Create(ctx, &db.User{
+	admin, err := s.users.Create(ctx, &db.User{
 		Name: "Admin", Email: normalizeEmail(s.cfg.AdminEmail), PasswordHash: string(hash),
 		Role: db.RoleAdmin, Status: db.StatusActive,
 	})
+	if err != nil {
+		return err
+	}
+	_, err = s.users.MarkEmailVerified(ctx, admin.ID)
 	return err
 }

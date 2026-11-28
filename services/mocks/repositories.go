@@ -206,13 +206,14 @@ func (m *UserRepo) AdminExists(_ context.Context) (bool, error) {
 // AuthRepo is an in-memory AuthRepository. Err, when set, is returned by every method.
 type AuthRepo struct {
 	Err     error
-	Tokens  map[string]*db.RefreshToken  // by hash
-	Resets  map[string]*db.PasswordReset // by id
+	Tokens  map[string]*db.RefreshToken      // by hash
+	Resets  map[string]*db.PasswordReset     // by id
+	Verifs  map[string]*db.EmailVerification // by id
 	nextRst int
 }
 
 func NewAuthRepo() *AuthRepo {
-	return &AuthRepo{Tokens: map[string]*db.RefreshToken{}, Resets: map[string]*db.PasswordReset{}}
+	return &AuthRepo{Tokens: map[string]*db.RefreshToken{}, Resets: map[string]*db.PasswordReset{}, Verifs: map[string]*db.EmailVerification{}}
 }
 
 func (m *AuthRepo) CreateRefreshToken(_ context.Context, userID, hash string, exp time.Time) error {
@@ -262,25 +263,58 @@ func (m *AuthRepo) RevokeAllRefreshTokens(_ context.Context, userID string) erro
 }
 
 func (m *AuthRepo) CreatePasswordReset(_ context.Context, userID, codeHash string, exp time.Time) error {
+	return m.createCode(m.Resets, userID, codeHash, exp)
+}
+
+func (m *AuthRepo) GetLatestPasswordReset(_ context.Context, userID string) (*db.PasswordReset, error) {
+	return m.latestCode(m.Resets, userID)
+}
+
+func (m *AuthRepo) RecordResetAttempt(_ context.Context, id string) (int, error) {
+	return m.recordAttempt(m.Resets, id)
+}
+
+func (m *AuthRepo) MarkPasswordResetUsed(_ context.Context, id string) error {
+	return m.markUsed(m.Resets, id)
+}
+
+func (m *AuthRepo) CreateEmailVerification(_ context.Context, userID, codeHash string, exp time.Time) error {
+	return m.createCode(m.Verifs, userID, codeHash, exp)
+}
+
+func (m *AuthRepo) GetLatestEmailVerification(_ context.Context, userID string) (*db.EmailVerification, error) {
+	return m.latestCode(m.Verifs, userID)
+}
+
+func (m *AuthRepo) RecordVerificationAttempt(_ context.Context, id string) (int, error) {
+	return m.recordAttempt(m.Verifs, id)
+}
+
+func (m *AuthRepo) MarkEmailVerificationUsed(_ context.Context, id string) error {
+	return m.markUsed(m.Verifs, id)
+}
+
+// createCode replaces the user's previous code, like the real table.
+func (m *AuthRepo) createCode(codes map[string]*db.OneTimeCode, userID, codeHash string, exp time.Time) error {
 	if m.Err != nil {
 		return m.Err
 	}
-	for id, r := range m.Resets {
+	for id, r := range codes {
 		if r.UserID == userID {
-			delete(m.Resets, id)
+			delete(codes, id)
 		}
 	}
 	m.nextRst++
 	id := string(rune('a' + m.nextRst))
-	m.Resets[id] = &db.PasswordReset{ID: id, UserID: userID, CodeHash: codeHash, ExpiresAt: exp}
+	codes[id] = &db.OneTimeCode{ID: id, UserID: userID, CodeHash: codeHash, ExpiresAt: exp, CreatedAt: time.Now()}
 	return nil
 }
 
-func (m *AuthRepo) GetLatestPasswordReset(_ context.Context, userID string) (*db.PasswordReset, error) {
+func (m *AuthRepo) latestCode(codes map[string]*db.OneTimeCode, userID string) (*db.OneTimeCode, error) {
 	if m.Err != nil {
 		return nil, m.Err
 	}
-	for _, r := range m.Resets {
+	for _, r := range codes {
 		if r.UserID == userID && r.UsedAt == nil {
 			c := *r
 			return &c, nil
@@ -289,11 +323,11 @@ func (m *AuthRepo) GetLatestPasswordReset(_ context.Context, userID string) (*db
 	return nil, repositories.ErrNotFound
 }
 
-func (m *AuthRepo) RecordResetAttempt(_ context.Context, id string) (int, error) {
+func (m *AuthRepo) recordAttempt(codes map[string]*db.OneTimeCode, id string) (int, error) {
 	if m.Err != nil {
 		return 0, m.Err
 	}
-	r, ok := m.Resets[id]
+	r, ok := codes[id]
 	if !ok {
 		return 0, repositories.ErrNotFound
 	}
@@ -301,11 +335,11 @@ func (m *AuthRepo) RecordResetAttempt(_ context.Context, id string) (int, error)
 	return r.Attempts, nil
 }
 
-func (m *AuthRepo) MarkPasswordResetUsed(_ context.Context, id string) error {
+func (m *AuthRepo) markUsed(codes map[string]*db.OneTimeCode, id string) error {
 	if m.Err != nil {
 		return m.Err
 	}
-	r, ok := m.Resets[id]
+	r, ok := codes[id]
 	if !ok || r.UsedAt != nil {
 		return repositories.ErrNotFound
 	}
@@ -314,15 +348,26 @@ func (m *AuthRepo) MarkPasswordResetUsed(_ context.Context, id string) error {
 	return nil
 }
 
-// Mailer records the last reset code instead of sending it.
+// Mailer records the last reset code and the last verification code instead of sending them.
 type Mailer struct {
 	Err   error
 	Email string
+	Lang  string
 	Code  string
+	// Verifications counts the verification emails; VerifyCode is the last one.
+	Verifications int
+	VerifyEmail   string
+	VerifyCode    string
 }
 
-func (m *Mailer) SendPasswordResetCode(_ context.Context, email, code string) error {
-	m.Email, m.Code = email, code
+func (m *Mailer) SendPasswordResetCode(_ context.Context, email, lang, code string) error {
+	m.Email, m.Lang, m.Code = email, lang, code
+	return m.Err
+}
+
+func (m *Mailer) SendVerificationCode(_ context.Context, email, lang, code string) error {
+	m.Verifications++
+	m.VerifyEmail, m.Lang, m.VerifyCode = email, lang, code
 	return m.Err
 }
 
