@@ -8,11 +8,12 @@ import (
 
 // Repositories holds every repository plus the shared Store (pool + transactions).
 type Repositories struct {
-	Store *Store
-	Auth  AuthRepository
-	User  UserRepository
-	Note  NoteRepository
-	Photo PhotoRepository
+	Store  *Store
+	Auth   AuthRepository
+	User   UserRepository
+	Note   NoteRepository
+	Photo  PhotoRepository
+	School SchoolRepository
 }
 
 // InitRepositories connects to PostgreSQL, applies migrations and builds the repositories.
@@ -25,11 +26,12 @@ func InitRepositories(ctx context.Context, config utils.AppConfig) (*Repositorie
 		return nil, err
 	}
 	return &Repositories{
-		Store: store,
-		Auth:  NewAuthRepository(store),
-		User:  NewUserRepository(store),
-		Photo: NewPhotoRepository(store),
-		Note:  NewNoteRepository(store),
+		Store:  store,
+		Auth:   NewAuthRepository(store),
+		User:   NewUserRepository(store),
+		Photo:  NewPhotoRepository(store),
+		Note:   NewNoteRepository(store),
+		School: NewSchoolRepository(store),
 	}, nil
 }
 

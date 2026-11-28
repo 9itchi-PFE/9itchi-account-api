@@ -35,6 +35,7 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		r.GET("/auth/google/callback", handlers.GoogleCallback(services.Auth))
 		r.GET("/auth/linkedin", handlers.LinkedInSignIn(services.Auth))
 		r.GET("/auth/linkedin/callback", handlers.LinkedInCallback(services.Auth))
+		r.GET("/schools", handlers.ListSchools(services.School))
 	}
 
 	// user endpoints
@@ -61,6 +62,9 @@ func initializeRoutes(r *gin.Engine, services *services.Services) {
 		adminGroup.DELETE("/admin/users/:id", handlers.DeleteUser(services.User))
 		adminGroup.GET("/admin/users/:id/note", handlers.GetUserNote(services.Note))
 		adminGroup.PUT("/admin/users/:id/note", handlers.SetUserNote(services.Note))
+		adminGroup.POST("/admin/schools", handlers.CreateSchool(services.School))
+		adminGroup.PUT("/admin/schools/:code", handlers.UpdateSchool(services.School))
+		adminGroup.DELETE("/admin/schools/:code", handlers.DeleteSchool(services.School))
 	}
 
 	// internal endpoints
