@@ -20,6 +20,7 @@ type Services struct {
 	User    UserService
 	Note    NoteService
 	Photo   PhotoService
+	School  SchoolService
 	Clients *Clients
 }
 
@@ -65,8 +66,9 @@ func InitServices(config utils.AppConfig, repos *repositories.Repositories) *Ser
 			peers.NewEraser("tracker", config.TrackerAPIURL, config.InternalAPIKey),
 			peers.NewEraser("payments", config.PaymentsAPIURL, config.InternalAPIKey),
 		),
-		Note:  NewNoteService(repos.Note, repos.User),
-		Photo: NewPhotoService(repos.Photo),
+		Note:   NewNoteService(repos.Note, repos.User),
+		Photo:  NewPhotoService(repos.Photo),
+		School: NewSchoolService(repos.School),
 		Clients: &Clients{
 			Notification: notification.New(config.NotificationAPIURL, config.InternalAPIKey),
 			Payments:     payments.New(config.PaymentsAPIURL, config.InternalAPIKey),

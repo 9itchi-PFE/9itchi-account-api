@@ -34,6 +34,7 @@ A publish failure is logged and never fails the signup. A broker that cannot be 
 | POST | `/auth/logout` | user | Logout |
 | POST | `/auth/forgot-password` | public | ForgotPassword |
 | POST | `/auth/reset-password` | public | ResetPassword |
+| GET | `/schools` | public | ListSchools (`{"items":[{"code","name_fr","name_en","name_ar"}]}`, in display order; seeded by migration `0009`) |
 | GET | `/auth/google` | public | GoogleSignIn (302 to Google, 503 when unconfigured) |
 | GET | `/auth/google/callback` | public | GoogleCallback (302 to `FRONTEND_URL/auth/callback#access_token=...&refresh_token=...`, failures to `FRONTEND_URL/auth/signin?error=google_failed`) |
 | GET | `/auth/linkedin` | public | LinkedInSignIn (302 to LinkedIn, OpenID Connect; 503 when unconfigured) |
@@ -51,6 +52,9 @@ A publish failure is logged and never fails the signup. A broker that cannot be 
 | DELETE | `/admin/users/:id` | admin | DeleteUser |
 | GET | `/admin/users/:id/note` | admin | GetUserNote (the team's internal note about a user; never returned to the user) |
 | PUT | `/admin/users/:id/note` | admin | SetUserNote (body `note`, 2000 characters at most; empty empties it) |
+| POST | `/admin/schools` | admin | CreateSchool (body `code` `[A-Z0-9_-]{2,20}`, upper-cased, and `name_fr`, `name_en`, `name_ar`, 160 characters at most; 201, 409 when the code exists) |
+| PUT | `/admin/schools/:code` | admin | UpdateSchool (body `name_fr`, `name_en`, `name_ar`; the code cannot change; 404 when unknown) |
+| DELETE | `/admin/schools/:code` | admin | DeleteSchool (204; users who chose it keep their value) |
 | GET | `/internal/users/:id` | internal | InternalGetUser |
 
 ## Run

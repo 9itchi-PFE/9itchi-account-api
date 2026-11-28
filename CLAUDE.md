@@ -12,13 +12,13 @@ Auth and identity hub: signup/login, JWT access (15 min) + refresh (7 d, hashed,
 - Check: `gofmt -l .; go build ./... && go vet ./... && go test ./...`; `go test -tags integration -count=1 ./repositories/...`; `golangci-lint run --build-tags integration`.
 
 ## Routes
-- Public: `POST /auth/signup|login|refresh|forgot-password|reset-password`; `GET /auth/google|linkedin`, `/auth/{google,linkedin}/callback`.
+- Public: `GET /schools`; `POST /auth/signup|login|refresh|forgot-password|reset-password`; `GET /auth/google|linkedin`, `/auth/{google,linkedin}/callback`.
 - User: `POST /auth/logout`; `GET|PUT|DELETE /users/me`; `PUT /users/me/language`; `GET|PUT|DELETE /users/me/photo`.
-- Admin: `GET /admin/users`, `GET|DELETE /admin/users/:id`, `PUT /admin/users/:id/suspend`, `GET|PUT /admin/users/:id/note`.
+- Admin: `GET /admin/users`, `GET|DELETE /admin/users/:id`, `PUT /admin/users/:id/suspend`, `GET|PUT /admin/users/:id/note`, `POST /admin/schools`, `PUT|DELETE /admin/schools/:code`.
 - Internal: `GET /internal/users/:id` (notification-api; payments-api reads `email`, `email_verified` for free grants).
 
 ## Data, peers, events
-- Tables: `users` (`photo` bytea, one square JPEG <= 1 MiB; upload cap 5 MB before resize), `refresh_tokens`, `password_resets`, `user_notes`. `users.email_verified` (`0008`). Latest `0008_users_email_verified.sql`.
+- Tables: `users` (`photo` bytea, one square JPEG <= 1 MiB; upload cap 5 MB before resize), `refresh_tokens`, `password_resets`, `user_notes`, `schools` (code PK, `name_fr|en|ar`, `position`; seeded by `0009`). `users.email_verified` (`0008`). Latest `0009_schools.sql`.
 - Eraser (`pkg/peers/eraser.go`): `DELETE /internal/users/:id` on email, resume, job, notification, chat, tracker, payments (in that order, 15 s each), then deletes the account. One failure keeps the account; retryable.
 - Publishes `user.registered` (`{user_id}`). Consumes nothing.
 - Providers: `core.OAuthProvider` Google (`pkg/google`) + LinkedIn OIDC (`pkg/linkedin`), each 503 until its ID/secret are set; `Mailer` Mailgun, else `NoopMailer`.
@@ -29,6 +29,7 @@ Auth and identity hub: signup/login, JWT access (15 min) + refresh (7 d, hashed,
 - Unknown-email login burns a dummy bcrypt compare; forgot-password always answers generically; reset code TTL 15 min.
 - OAuth: failure redirects to frontend with `error=<provider>_failed`; tokens in URL fragment; OAuth users get a password-less account (random hash); verified email required; sign-in sets `users.email_verified`, carried as JWT claim `email_verified` (payments-api student discount). Password signups stay unverified.
 - Profile: LinkedIn/GitHub URLs reduced to canonical handles (other hosts refused); phone stored without spaces.
+- Schools: the list students pick from (`GET /schools`, public) is kept by admins; the code (`[A-Z0-9_-]{2,20}`, upper-cased) is what `users.school` stores and never changes, only the three names can be edited. Removing a school leaves users who chose it untouched. The client adds its own "Other" entry.
 - Subscription data lives only in payments-api (no `users.plan_id`).
 
 ## Gotchas
